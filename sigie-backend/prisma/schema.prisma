@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model Usuario {
+  id                 Int           @id @default(autoincrement())
+  email              String        @unique
+  correoSecundario   String?
+  password           String
+  nombre             String
+  apellidoPaterno    String
+  apellidoMaterno    String?
+  telefono1          String?
+  telefono2          String?
+  cp                 String?
+  calle              String?
+  rol                String        // ADMIN, DIRECTOR, DOCENTE, TUTOR, ENFERMERA
+  estado             String        @default("ACTIVO")
+  gradoAsignado      String?
+  grupoAsignado	     String?
+
+  incidentesReportados Incidente[]
+  reportesGenerados    Reporte[]
+  seguimientosHechos   Seguimiento[] 
+  hijos                Alumno[]      @relation("TutorHijos")
+  auditorias	       Auditoria[]
+}
+
+
+model Alumno {
+  id               Int              @id @default(autoincrement())
+  matricula        String           @unique
+  nombre           String
+  apellidoPaterno  String
+  apellidoMaterno  String?
+  grado            String
+  grupo            String?
+  expedienteMedico String?          @db.Text
+  
+  tutorId          Int?
+  tutor            Usuario?         @relation("TutorHijos", fields: [tutorId], references: [id])
+  
+  incidentes       Incidente[] 
+  atenciones       AtencionMedica[]
+}
+
+model Incidente {
+  id               Int           @id @default(autoincrement())
+  tipo             String
+  gravedad         String
+  descripcionBreve String?
+  descripcion      String        @db.Text
+  fechaIncidencia  DateTime      @default(now())
+  horaIncidencia   String?
+  municipio        String?
+  colonia          String?
+  estado           String        @default("ABIERTO") // ABIERTO, EN_PROCESO, CERRADO
+  
+  reportadoPorId   Int
+  reportadoPor     Usuario       @relation(fields: [reportadoPorId], references: [id])
+  
+  alumnos          Alumno[]
+  seguimientos     Seguimiento[]
+}
+
+model Seguimiento {
+  id          Int       @id @default(autoincrement())
+  fecha       DateTime  @default(now())
+  descripcion String    @db.Text
+  
+  incidenteId Int
+  incidente   Incidente @relation(fields: [incidenteId], references: [id], onDelete: Cascade)
+  
+  autorId     Int
+  autor       Usuario   @relation(fields: [autorId], references: [id])
+}
+
+model Reporte {
+  id               Int      @id @default(autoincrement())
+  fechaElaboracion DateTime @default(now())
+  horaElaboracion  String?
+  contenido        String   @db.Text
+  
+  creadoPorId      Int
+  creadoPor        Usuario  @relation(fields: [creadoPorId], references: [id])
+}
+
+model AtencionMedica {
+  id                   Int      @id @default(autoincrement())
+  fechaAtencion        DateTime @default(now())
+  nombreIntervencion   String
+  telefonoIntervencion String?
+  descripcion          String   @db.Text
+  
+  alumnoId             Int
+  alumno               Alumno   @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
+}
+
+// NUEVA TABLA: Bitácora de Auditoría (Caja Negra)
+model Auditoria {
+  id        Int      @id @default(autoincrement())
+  fecha     DateTime @default(now())
+  accion    String   // Ej. "ELIMINAR_INCIDENTE"
+  entidad   String   // Ej. "INCIDENTE"
+  entidadId Int?     // El ID original del registro afectado
+  detalles  String   @db.Text // Qué decía el reporte antes de ser borrado
+  
+  usuarioId Int
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+}
