@@ -27,7 +27,7 @@ const Enfermeria = () => {
 
   const fetchAtenciones = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/atenciones', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/atenciones', getConfig());
       setAtenciones(response.data);
     } catch (error) {
       console.error('Error al cargar atenciones médicas');
@@ -36,7 +36,7 @@ const Enfermeria = () => {
 
   const fetchAlumnos = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/alumnos', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/alumnos', getConfig());
       setAlumnos(response.data);
     } catch (error) {
       console.error('Error al cargar alumnos');
@@ -50,7 +50,7 @@ const Enfermeria = () => {
     setIsLoading(true); setError(''); setSuccess('');
     
     try {
-      await axios.post('http://localhost:4000/api/atenciones', {
+      await axios.post('https://api-sigie.delachemilio.xyz/api/atenciones', {
         alumnoId: alumnoSeleccionado,
         nombreIntervencion,
         telefonoIntervencion,

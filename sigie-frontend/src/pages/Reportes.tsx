@@ -9,7 +9,7 @@ const Reportes = () => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await axios.get('http://localhost:4000/api/reportes/stats', {
+        const response = await axios.get('https://api-sigie.delachemilio.xyz/api/reportes/stats', {
           headers: { Authorization: `Bearer ${localStorage.getItem('sigie_token')}` }
         });
         setStats(response.data);

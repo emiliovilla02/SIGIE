@@ -17,7 +17,7 @@ const PortalTutor = () => {
 
   const fetchMisHijos = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/mis-hijos', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/mis-hijos', getConfig());
       setMisHijos(response.data);
     } catch (err: any) {
       setError('Error al cargar la información del portal familiar.');

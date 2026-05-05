@@ -34,7 +34,7 @@ const Dashboard = () => {
 
   const fetchEstadisticas = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/estadisticas', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/estadisticas', getConfig());
       setStats(response.data);
     } catch (err: any) {
       setError('Error al cargar las estadísticas del sistema.');

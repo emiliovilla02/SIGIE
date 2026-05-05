@@ -49,7 +49,7 @@ const Incidentes = () => {
 
   const fetchIncidentes = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/incidentes', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/incidentes', getConfig());
       setIncidentes(response.data);
     } catch (error) {
       console.error('Error al cargar incidentes');
@@ -58,7 +58,7 @@ const Incidentes = () => {
 
   const fetchAlumnos = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/alumnos', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/alumnos', getConfig());
       setAlumnos(response.data);
     } catch (error) {
       console.error('Error al cargar alumnos');
@@ -82,7 +82,7 @@ const Incidentes = () => {
     }
 
     try {
-      await axios.post('http://localhost:4000/api/incidentes', {
+      await axios.post('https://api-sigie.delachemilio.xyz/api/incidentes', {
         tipo, gravedad, descripcionBreve, descripcion, alumnosIds: alumnosSeleccionados
       }, getConfig());
 
@@ -104,14 +104,14 @@ const Incidentes = () => {
     
     setIsLoading(true);
     try {
-      await axios.post(`http://localhost:4000/api/incidentes/${incidenteSeleccionado.id}/seguimientos`, {
+      await axios.post(`https://api-sigie.delachemilio.xyz/api/incidentes/${incidenteSeleccionado.id}/seguimientos`, {
         descripcion: nuevoSeguimiento
       }, getConfig());
 
       setSuccess('Actualización agregada al historial.');
       setNuevoSeguimiento('');
       
-      const response = await axios.get('http://localhost:4000/api/incidentes', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/incidentes', getConfig());
       setIncidentes(response.data);
       const actualizado = response.data.find((i: any) => i.id === incidenteSeleccionado.id);
       setIncidenteSeleccionado(actualizado);
@@ -127,13 +127,13 @@ const Incidentes = () => {
   const handleCambiarEstado = async (nuevoEstado: string) => {
     setIsLoading(true);
     try {
-      await axios.put(`http://localhost:4000/api/incidentes/${incidenteSeleccionado.id}/estado`, {
+      await axios.put(`https://api-sigie.delachemilio.xyz/api/incidentes/${incidenteSeleccionado.id}/estado`, {
         estado: nuevoEstado
       }, getConfig());
       
       setSuccess(`Incidente marcado como ${nuevoEstado.replace('_', ' ')}`);
       
-      const response = await axios.get('http://localhost:4000/api/incidentes', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/incidentes', getConfig());
       setIncidentes(response.data);
       setIncidenteSeleccionado(response.data.find((i: any) => i.id === incidenteSeleccionado.id));
       setTimeout(() => setSuccess(''), 3000);
@@ -154,7 +154,7 @@ const Incidentes = () => {
     setIsLoading(true);
     setError('');
     try {
-      await axios.delete(`http://localhost:4000/api/incidentes/${incidenteSeleccionado.id}`, getConfig());
+      await axios.delete(`https://api-sigie.delachemilio.xyz/api/incidentes/${incidenteSeleccionado.id}`, getConfig());
       
       setSuccess('Incidente eliminado. La acción ha sido auditada.');
       fetchIncidentes(); 

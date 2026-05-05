@@ -18,7 +18,7 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:4000/api/login', {
+      const response = await axios.post('https://api-sigie.delachemilio.xyz/api/login', {
         email,
         password
       });

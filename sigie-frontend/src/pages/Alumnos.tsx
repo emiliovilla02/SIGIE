@@ -39,7 +39,7 @@ const Alumnos = () => {
   } catch (error) {}
 
   const tienePermisos = usuarioActual?.rol === 'ADMIN' || usuarioActual?.rol === 'DIRECTOR';
-
+  
   const getConfig = () => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('sigie_token')}` }
   });
@@ -51,7 +51,7 @@ const Alumnos = () => {
 
   const fetchAlumnos = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/alumnos', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/alumnos', getConfig());
       setAlumnos(response.data);
     } catch (error) {
       console.error('Error al cargar alumnos', error);
@@ -60,7 +60,7 @@ const Alumnos = () => {
 
   const fetchTutores = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/tutores', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/tutores', getConfig());
       setTutores(response.data);
     } catch (error) {
       console.error('Error al cargar la lista de tutores', error);
@@ -69,7 +69,7 @@ const Alumnos = () => {
 
   const verDetalles = async (id: number) => {
     try {
-      const response = await axios.get(`http://localhost:4000/api/alumnos/${id}`, getConfig());
+      const response = await axios.get(`https://api-sigie.delachemilio.xyz/api/alumnos/${id}`, getConfig());
       setAlumnoSeleccionado(response.data);
       setVista('detalle');
     } catch (error) {
@@ -103,10 +103,10 @@ const Alumnos = () => {
 
     try {
       if (vista === 'crear') {
-        await axios.post('http://localhost:4000/api/alumnos', payload, getConfig());
+        await axios.post('https://api-sigie.delachemilio.xyz/api/alumnos', payload, getConfig());
         setSuccess('Alumno registrado correctamente.');
       } else if (vista === 'editar') {
-        await axios.put(`http://localhost:4000/api/alumnos/${alumnoSeleccionado.id}`, payload, getConfig());
+        await axios.put(`https://api-sigie.delachemilio.xyz/api/alumnos/${alumnoSeleccionado.id}`, payload, getConfig());
         setSuccess('Informacion actualizada correctamente.');
       }
 

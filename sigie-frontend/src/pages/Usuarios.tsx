@@ -48,7 +48,7 @@ const Usuarios = () => {
 
   const fetchUsuarios = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/usuarios', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/usuarios', getConfig());
       setUsuarios(response.data);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Error al cargar la lista de usuarios');
@@ -86,10 +86,10 @@ const Usuarios = () => {
 
     try {
       if (vista === 'crear') {
-        await axios.post('http://localhost:4000/api/usuarios', payload, getConfig());
+        await axios.post('https://api-sigie.delachemilio.xyz/api/usuarios', payload, getConfig());
         setSuccess('Usuario creado exitosamente. Ya puede iniciar sesion.');
       } else {
-        await axios.put(`http://localhost:4000/api/usuarios/${usuarioAEditar.id}`, payload, getConfig());
+        await axios.put(`https://api-sigie.delachemilio.xyz/api/usuarios/${usuarioAEditar.id}`, payload, getConfig());
         setSuccess('Usuario modificado exitosamente.');
       }
       
@@ -195,7 +195,7 @@ const Usuarios = () => {
                       </td>
                       <td className="p-4 text-center">
                         {/* EVALUACION DE JERARQUIA PARA EDITAR */}
-                        {miRango > obtenerRangoRol(u.rol) ? (
+                        {miRango > obtenerRangoRol(u.rol) || usuarioLogueado?.id === u.id ? (
                           <button onClick={() => prepararEdicion(u)} className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1 mx-auto">
                             <Edit className="h-4 w-4" /> Editar
                           </button>

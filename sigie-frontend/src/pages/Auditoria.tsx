@@ -17,7 +17,7 @@ const Auditoria = () => {
 
   const fetchAuditoria = async () => {
     try {
-      const response = await axios.get('http://localhost:4000/api/auditoria', getConfig());
+      const response = await axios.get('https://api-sigie.delachemilio.xyz/api/auditoria', getConfig());
       setRegistros(response.data);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Error al cargar la bitácora.');
