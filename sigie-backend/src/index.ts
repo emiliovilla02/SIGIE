@@ -191,6 +191,139 @@ app.post('/api/login', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// ==========================================
+// RECUPERACIÓN DE CONTRASEÑA
+// ==========================================
+
+// 1. Solicitar el reseteo (Genera token y envía correo)
+app.post('/api/recuperar-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      res.status(400).json({ error: 'Debes proporcionar un correo electrónico.' });
+      return;
+    }
+
+    // Buscamos si el correo existe en el sistema
+    const usuario = await prisma.usuario.findUnique({ where: { email } });
+
+    if (!usuario) {
+      // Por seguridad, damos un mensaje genérico o específico. Aquí seremos claros:
+      res.status(404).json({ error: 'No existe ninguna cuenta registrada con este correo.' });
+      return;
+    }
+
+    // Generamos un token especial que SOLO dura 15 minutos
+    const resetToken = jwt.sign(
+      { id: usuario.id, email: usuario.email },
+      process.env.JWT_SECRET || 'secreto_de_respaldo',
+      { expiresIn: '15m' }
+    );
+
+    // Creamos el enlace que llevará al usuario a la nueva pantalla que haremos en React
+    const resetUrl = `https://sigie.delachemilio.xyz/reset-password?token=${resetToken}`;
+
+    // Enviamos el correo con Nodemailer
+    await transporter.sendMail({
+      from: `"Soporte SIGIE" <${process.env.EMAIL_USER}>`,
+      to: usuario.email,
+      subject: `🔒 Recuperación de Contraseña - SIGIE`,
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px;">
+          <h2 style="color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;">Recuperación de Contraseña</h2>
+          <p>Hola <strong>${usuario.nombre}</strong>,</p>
+          <p>Hemos recibido una solicitud para restablecer la contraseña de tu cuenta en el Sistema SIGIE.</p>
+          <p>Si fuiste tú, haz clic en el siguiente botón para crear una nueva contraseña. <b>Este enlace caducará en 15 minutos.</b></p>
+          <br>
+          <div style="text-align: center;">
+            <a href="${resetUrl}" style="background-color: #1e3a8a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Restablecer mi Contraseña</a>
+          </div>
+          <br><br>
+          <p style="font-size: 12px; color: #6b7280;">Si no puedes hacer clic en el botón, copia y pega este enlace en tu navegador:</p>
+          <p style="font-size: 11px; color: #3b82f6; word-break: break-all;">${resetUrl}</p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin-top: 30px;" />
+          <p style="font-size: 11px; color: #6b7280; text-align: center;">Si no solicitaste este cambio, simplemente ignora este correo. Tu cuenta sigue segura.</p>
+        </div>
+      `
+    });
+
+    res.json({ message: 'Se han enviado las instrucciones a tu correo electrónico.' });
+  } catch (error) {
+    console.error('Error al solicitar recuperación:', error);
+    res.status(500).json({ error: 'Hubo un error al intentar enviar el correo de recuperación.' });
+  }
+});
+
+// 2. Ejecutar el reseteo (Recibe el token y la nueva contraseña)
+app.post('/api/reset-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, nuevaPassword } = req.body;
+
+    if (!token || !nuevaPassword) {
+      res.status(400).json({ error: 'Faltan datos para realizar el cambio.' });
+      return;
+    }
+
+    // Verificamos si el token es válido y no ha caducado
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'secreto_de_respaldo');
+    } catch (err) {
+      res.status(401).json({ error: 'El enlace de recuperación es inválido o ya ha caducado. Por favor solicita uno nuevo.' });
+      return;
+    }
+
+    // Si el token es válido, encriptamos la nueva contraseña
+    const hashedPassword = await bcrypt.hash(nuevaPassword, 10);
+
+    // Actualizamos al usuario en la base de datos
+    await prisma.usuario.update({
+      where: { id: decoded.id },
+      data: { password: hashedPassword }
+    });
+
+    res.json({ message: 'Tu contraseña ha sido actualizada correctamente. Ya puedes iniciar sesión.' });
+  } catch (error) {
+    console.error('Error al resetear contraseña:', error);
+    res.status(500).json({ error: 'Error interno del servidor al actualizar la contraseña.' });
+  }
+});
+
+// 4. NUEVA RUTA: ELIMINAR un usuario (PROTEGIDO: Solo ADMIN)
+app.delete('/api/usuarios/:id', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const idObjetivo = Number(req.params.id);
+
+    // 1. Verificación de seguridad: Solo el ADMIN puede borrar
+    if (req.usuario?.rol !== 'ADMIN') {
+      res.status(403).json({ error: 'Nivel de jerarquía insuficiente para eliminar usuarios.' });
+      return;
+    }
+
+    // 2. Protección contra auto-borrado suicida
+    if (req.usuario.id === idObjetivo) {
+      res.status(400).json({ error: 'Operación denegada: No puedes eliminar tu propia cuenta de Administrador.' });
+      return;
+    }
+
+    // 3. Destruimos el usuario
+    await prisma.usuario.delete({
+      where: { id: idObjetivo }
+    });
+
+    res.json({ message: 'Usuario eliminado del sistema correctamente.' });
+  } catch (error: any) {
+    console.error('Error al eliminar usuario:', error);
+    // Si el usuario ya reportó incidentes, la base de datos protegerá esos registros y evitará el borrado
+    if (error.code === 'P2003') {
+      res.status(400).json({ error: 'No se puede eliminar a este usuario porque ya tiene registros o incidentes asociados en el sistema.' });
+    } else {
+      res.status(500).json({ error: 'Error interno al intentar eliminar el usuario.' });
+    }
+  }
+});
+
 // Ruta PROTEGIDA de prueba (Solo entras si tienes el token)
 app.get('/api/perfil', verificarToken, (req: AuthRequest, res: Response) => {
   res.json({
@@ -339,7 +472,7 @@ app.put('/api/alumnos/:id', verificarToken, async (req: AuthRequest, res: Respon
   }
 });
 
-// 4. NUEVA RUTA: Portal Familiar (Solo trae los hijos del tutor logueado)
+// 4. Portal Familiar (Solo trae los hijos del tutor logueado)
 app.get('/api/mis-hijos', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     // Protección de seguridad: Solo los Tutores pueden entrar aquí
@@ -365,6 +498,41 @@ app.get('/api/mis-hijos', verificarToken, async (req: AuthRequest, res: Response
     res.json(misHijos);
   } catch (error) {
     console.error('Error al cargar portal familiar:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// NUEVA RUTA: ACTUALIZAR expediente médico por el Tutor (Solo sus hijos)
+app.put('/api/mis-hijos/:id/expediente', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // Protección de seguridad: Solo Tutores
+    if (req.usuario?.rol !== 'TUTOR') {
+      res.status(403).json({ error: 'Acceso denegado. Solo los tutores pueden usar esta ruta.' });
+      return;
+    }
+
+    const alumnoId = Number(req.params.id);
+    const { expedienteMedico } = req.body;
+
+    // Verificación de seguridad clave: ¿Este alumno realmente es hijo de este tutor?
+    const alumno = await prisma.alumno.findUnique({
+      where: { id: alumnoId }
+    });
+
+    if (!alumno || alumno.tutorId !== req.usuario.id) {
+      res.status(403).json({ error: 'Operación rechazada: No tienes permiso para modificar este expediente.' });
+      return;
+    }
+
+    // Actualizamos ÚNICAMENTE el campo médico
+    const alumnoActualizado = await prisma.alumno.update({
+      where: { id: alumnoId },
+      data: { expedienteMedico }
+    });
+
+    res.json({ message: 'Expediente médico actualizado correctamente', alumno: alumnoActualizado });
+  } catch (error) {
+    console.error('Error al actualizar expediente por tutor:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
@@ -396,6 +564,15 @@ app.post('/api/incidentes', verificarToken, async (req: AuthRequest, res: Respon
           connect: alumnosIds.map((id: any) => ({ id: Number(id) }))
         }
       }
+    });
+
+    // --- Generación de Folio Automático ---
+    // Crea un folio tipo: INC-2026-0005
+    const folioGenerado = `INC-${new Date().getFullYear()}-${nuevoIncidente.id.toString().padStart(4, '0')}`;
+    
+    await prisma.incidente.update({
+      where: { id: nuevoIncidente.id },
+      data: { folio: folioGenerado }
     });
 
     // 2. SECCIÓN DE NOTIFICACIONES POR CORREO (RF-009)
@@ -724,6 +901,209 @@ app.get('/api/estadisticas', verificarToken, async (req: AuthRequest, res: Respo
   } catch (error) {
     console.error('Error al cargar estadísticas:', error);
     res.status(500).json({ error: 'Error al cargar los datos del dashboard' });
+  }
+});
+
+// ==========================================
+// MÓDULO DE INTERVENCIONES EXTERNAS
+// ==========================================
+
+// 1. CREAR una nueva intervención
+app.post('/api/intervenciones', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // Solo personal autorizado
+    if (req.usuario?.rol === 'TUTOR') {
+      res.status(403).json({ error: 'Acceso denegado.' });
+      return;
+    }
+
+    const { folioIncidente, tipoIntervencion, entidad, fechaHora, noReporteOficial, responsable, observaciones } = req.body;
+
+    // Buscamos el incidente usando el Folio
+    const incidenteAsociado = await prisma.incidente.findUnique({
+      where: { folio: folioIncidente }
+    });
+
+    if (!incidenteAsociado) {
+      res.status(404).json({ error: 'No se encontró ningún incidente con ese folio.' });
+      return;
+    }
+
+    const nuevaIntervencion = await prisma.intervencionExterna.create({
+      data: {
+        tipoIntervencion,
+        entidad,
+        fechaHora: new Date(fechaHora),
+        noReporteOficial,
+        responsable,
+        observaciones,
+        incidenteId: incidenteAsociado.id,
+        registradoPorId: req.usuario.id
+      }
+    });
+
+    res.status(201).json({ message: 'Intervención registrada correctamente.', intervencion: nuevaIntervencion });
+  } catch (error) {
+    console.error('Error al crear intervención externa:', error);
+    res.status(500).json({ error: 'Error interno del servidor al guardar la intervención.' });
+  }
+});
+
+// 2. OBTENER Estadísticas para el Dashboard Superior
+app.get('/api/intervenciones/stats', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const total = await prisma.intervencionExterna.count();
+    const enCurso = await prisma.intervencionExterna.count({ where: { estado: 'EN_CURSO' } });
+    const concluidas = await prisma.intervencionExterna.count({ where: { estado: 'CONCLUIDA' } });
+
+    // Calcular intervenciones de este mes
+    const inicioMes = new Date();
+    inicioMes.setDate(1);
+    inicioMes.setHours(0, 0, 0, 0);
+    const esteMes = await prisma.intervencionExterna.count({
+      where: { fechaHora: { gte: inicioMes } }
+    });
+
+    res.json({ total, enCurso, concluidas, esteMes });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al calcular estadísticas' });
+  }
+});
+
+// 3. OBTENER lista de intervenciones
+app.get('/api/intervenciones', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const intervenciones = await prisma.intervencionExterna.findMany({
+      include: {
+        incidente: { select: { folio: true, descripcionBreve: true } },
+        registradoPor: { select: { nombre: true, apellidoPaterno: true } }
+      },
+      orderBy: { fechaHora: 'desc' }
+    });
+    res.json(intervenciones);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener la lista de intervenciones.' });
+  }
+});
+
+// 4. CAMBIAR ESTADO (En Curso -> Concluida)
+app.put('/api/intervenciones/:id/estado', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { estado } = req.body;
+
+    const intervencion = await prisma.intervencionExterna.update({
+      where: { id: Number(id) },
+      data: { estado }
+    });
+
+    res.json({ message: 'Estado actualizado correctamente.', intervencion });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar el estado.' });
+  }
+});
+
+// ==========================================
+// MÓDULO DE AVISOS MASIVOS Y NOTIFICACIONES
+// ==========================================
+
+// 1. CREAR Y ENVIAR un nuevo aviso masivo
+app.post('/api/avisos', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // Restricción: Solo el Director (o Admin) puede mandar avisos masivos
+    if (req.usuario?.rol !== 'DIRECTOR' && req.usuario?.rol !== 'ADMIN') {
+      res.status(403).json({ error: 'Acceso denegado. Función exclusiva para Dirección.' });
+      return;
+    }
+
+    const { rolesDestino, tipoAviso, asunto, mensaje } = req.body;
+
+    if (!rolesDestino || rolesDestino.length === 0 || !asunto || !mensaje) {
+      res.status(400).json({ error: 'Faltan campos obligatorios o no se seleccionaron destinatarios.' });
+      return;
+    }
+
+    // Buscamos los correos de todos los usuarios activos que tengan los roles seleccionados
+    const destinatarios = await prisma.usuario.findMany({
+      where: {
+        rol: { in: rolesDestino },
+        estado: 'ACTIVO'
+      },
+      select: { email: true }
+    });
+
+    // Extraemos solo los textos de los correos y los unimos con comas
+    const correosBcc = destinatarios.map(d => d.email).join(', ');
+
+    // Guardamos el registro en la base de datos para la tabla del Director
+    const nuevoAviso = await prisma.aviso.create({
+      data: {
+        asunto,
+        mensaje,
+        tipoAviso,
+        destinosRoles: rolesDestino.join(','), // Guardamos como texto "TUTOR,DOCENTE"
+        creadoPorId: req.usuario.id
+      }
+    });
+
+    // Disparamos el correo a todos los involucrados (Usamos BCC - Copia Oculta por privacidad)
+    if (correosBcc) {
+      await transporter.sendMail({
+        from: `"Dirección SIGIE" <${process.env.EMAIL_USER}>`,
+        bcc: correosBcc,
+        subject: `📢 Aviso Institucional: ${asunto}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            <div style="background-color: #f3f4f6; padding: 10px; border-radius: 6px; margin-bottom: 20px;">
+              <h2 style="color: #4c1d95; margin: 0; font-size: 16px;">${tipoAviso.toUpperCase()}</h2>
+            </div>
+            <h3 style="color: #1f2937; font-size: 20px; margin-top: 0;">${asunto}</h3>
+            <p style="color: #4b5563; white-space: pre-line; line-height: 1.6; font-size: 15px;">${mensaje}</p>
+            <hr style="margin-top: 30px; border: none; border-top: 1px solid #e5e7eb;" />
+            <p style="font-size: 11px; color: #9ca3af; text-align: center;">Este es un comunicado oficial enviado a través del Sistema SIGIE por la Dirección Escolar.</p>
+          </div>
+        `
+      });
+    }
+
+    res.status(201).json({ message: 'Aviso enviado y registrado correctamente.', aviso: nuevoAviso });
+  } catch (error) {
+    console.error('Error al enviar aviso masivo:', error);
+    res.status(500).json({ error: 'Error interno al procesar el aviso masivo.' });
+  }
+});
+
+// 2. OBTENER historial de avisos para la tabla del Director
+app.get('/api/avisos/enviados', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (req.usuario?.rol !== 'DIRECTOR' && req.usuario?.rol !== 'ADMIN') {
+      res.status(403).json({ error: 'Acceso denegado' });
+      return;
+    }
+    const avisos = await prisma.aviso.findMany({
+      orderBy: { fechaCreacion: 'desc' },
+      include: { creadoPor: { select: { nombre: true, apellidoPaterno: true } } }
+    });
+    res.json(avisos);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener historial de avisos' });
+  }
+});
+
+// 3. OBTENER mis notificaciones (Para la campanita en el Header de cualquier usuario)
+app.get('/api/avisos/mis-notificaciones', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const miRol = req.usuario?.rol || '';
+    
+    // Buscamos avisos donde los destinatarios incluyan el rol del usuario logueado
+    const avisos = await prisma.aviso.findMany({
+      where: { destinosRoles: { contains: miRol } },
+      orderBy: { fechaCreacion: 'desc' },
+      take: 10 // Solo mostramos los últimos 10 en la campanita
+    });
+    res.json(avisos);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al cargar notificaciones' });
   }
 });
 

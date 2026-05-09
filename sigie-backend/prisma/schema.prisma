@@ -28,6 +28,8 @@ model Usuario {
   seguimientosHechos   Seguimiento[] 
   hijos                Alumno[]      @relation("TutorHijos")
   auditorias	       Auditoria[]
+  intervencionesRegistradas IntervencionExterna[]
+  avisosCreados             Aviso[]
 }
 
 
@@ -50,6 +52,7 @@ model Alumno {
 
 model Incidente {
   id               Int           @id @default(autoincrement())
+  folio            String?       @unique
   tipo             String
   gravedad         String
   descripcionBreve String?
@@ -65,6 +68,7 @@ model Incidente {
   
   alumnos          Alumno[]
   seguimientos     Seguimiento[]
+  intervenciones   IntervencionExterna[]
 }
 
 model Seguimiento {
@@ -111,4 +115,36 @@ model Auditoria {
   
   usuarioId Int
   usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+}
+
+// Intervenciones Externas
+model IntervencionExterna {
+  id                 Int       @id @default(autoincrement())
+  tipoIntervencion   String
+  entidad            String
+  fechaHora          DateTime
+  noReporteOficial   String?
+  responsable        String?
+  observaciones      String    @db.Text
+  estado             String    @default("EN_CURSO") // EN_CURSO o CONCLUIDA
+  
+  incidenteId        Int
+  incidente          Incidente @relation(fields: [incidenteId], references: [id], onDelete: Cascade)
+
+  registradoPorId    Int
+  registradoPor      Usuario   @relation(fields: [registradoPorId], references: [id])
+}
+
+// Sistema de Avisos Masivos
+model Aviso {
+  id            Int       @id @default(autoincrement())
+  fechaCreacion DateTime  @default(now())
+  asunto        String
+  mensaje       String    @db.Text
+  tipoAviso     String    
+  destinosRoles String    // Guardará ej: "TUTOR,DOCENTE"
+  estado        String    @default("ENVIADO")
+
+  creadoPorId   Int
+  creadoPor     Usuario   @relation(fields: [creadoPorId], references: [id])
 }

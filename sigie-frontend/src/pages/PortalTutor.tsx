@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, AlertTriangle, CheckCircle, Activity, ShieldCheck } from 'lucide-react';
+import { Users, AlertTriangle, CheckCircle, Activity, ShieldCheck, Edit, Save, X } from 'lucide-react';
 
 const PortalTutor = () => {
   const [misHijos, setMisHijos] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // Nuevos estados para la edición médica
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [medicoTemp, setMedicoTemp] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const getConfig = () => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('sigie_token')}` }
@@ -26,6 +31,28 @@ const PortalTutor = () => {
     }
   };
 
+  const guardarExpedienteMedico = async (alumnoId: number) => {
+    setIsSaving(true);
+    try {
+      await axios.put(`https://api-sigie.delachemilio.xyz/api/mis-hijos/${alumnoId}/expediente`, {
+        expedienteMedico: medicoTemp
+      }, getConfig());
+      
+      // Actualizamos la lista para reflejar los cambios
+      await fetchMisHijos();
+      setEditandoId(null);
+    } catch (err: any) {
+      alert('Hubo un error al intentar guardar el expediente.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const iniciarEdicion = (id: number, textoActual: string) => {
+    setEditandoId(id);
+    setMedicoTemp(textoActual || '');
+  };
+
   if (isLoading) return <div className="p-8 text-center text-gray-500">Cargando portal familiar...</div>;
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
 
@@ -34,7 +61,7 @@ const PortalTutor = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
         <ShieldCheck className="h-12 w-12 text-blue-600 mx-auto mb-4" />
         <h2 className="text-3xl font-bold text-gray-800">Portal Familiar SIGIE</h2>
-        <p className="text-gray-500 mt-2">Bienvenido. Aquí puede monitorear el expediente y los avisos de sus hijos.</p>
+        <p className="text-gray-500 mt-2">Bienvenido. Aquí puede monitorear el expediente, avisos y mantener actualizada la información médica de sus hijos.</p>
       </div>
 
       {misHijos.length === 0 ? (
@@ -53,13 +80,49 @@ const PortalTutor = () => {
             </div>
 
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Información Médica */}
-              <div className="border border-gray-100 rounded-lg p-5 bg-gray-50">
-                <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-3"><Activity className="h-5 w-5 text-red-500"/> Información Médica</h4>
-                <p className="text-sm text-gray-700 whitespace-pre-line">{hijo.expedienteMedico || 'No hay registro de condiciones médicas.'}</p>
+              
+              {/* Sección Médica Mejorada */}
+              <div className="border border-gray-100 rounded-lg p-5 bg-gray-50 relative flex flex-col">
+                <div className="flex justify-between items-start mb-3 border-b border-gray-200 pb-2">
+                  <h4 className="font-bold text-gray-800 flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-red-500"/> Información Médica
+                  </h4>
+                  
+                  {editandoId === hijo.id ? (
+                    <div className="flex gap-2">
+                      <button onClick={() => setEditandoId(null)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Cancelar">
+                        <X className="h-5 w-5" />
+                      </button>
+                      <button onClick={() => guardarExpedienteMedico(hijo.id)} disabled={isSaving} className="p-1 text-blue-600 hover:text-blue-800 transition-colors" title="Guardar Cambios">
+                        <Save className="h-5 w-5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => iniciarEdicion(hijo.id, hijo.expedienteMedico)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors flex items-center gap-1 text-xs font-medium">
+                      <Edit className="h-4 w-4" /> Editar
+                    </button>
+                  )}
+                </div>
+
+                {editandoId === hijo.id ? (
+                  <div className="flex-1">
+                    <textarea
+                      autoFocus
+                      value={medicoTemp}
+                      onChange={(e) => setMedicoTemp(e.target.value)}
+                      placeholder="Ej. Alérgico a la penicilina, asma moderada, tipo de sangre O+..."
+                      className="w-full h-32 border border-blue-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">Mantenga esta información actualizada para casos de emergencia en enfermería.</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-700 whitespace-pre-line flex-1">
+                    {hijo.expedienteMedico || 'No hay registro de condiciones médicas. Haga clic en editar para agregar información relevante.'}
+                  </p>
+                )}
               </div>
 
-              {/* Historial de Incidentes */}
+              {/* Historial de Incidentes (Intacto) */}
               <div className="border border-gray-100 rounded-lg p-5 bg-gray-50">
                 <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-3"><AlertTriangle className="h-5 w-5 text-orange-500"/> Historial de Incidentes ({hijo.incidentes?.length || 0})</h4>
                 

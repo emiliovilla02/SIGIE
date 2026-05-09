@@ -128,6 +128,13 @@ const Alumnos = () => {
       const dataUrl = await toPng(elemento, {
         quality: 1,
         pixelRatio: 2,
+        // FORZAMOS EL TAMAÑO DE ESCRITORIO PARA EL PDF
+        width: 1024,
+        style: {
+          width: '1024px',
+          margin: '0',
+          padding: '20px'
+        },
         filter: (node) => {
           if (node.tagName !== 'SCRIPT' && node.getAttribute && node.getAttribute('data-html2canvas-ignore') === 'true') {
             return false;
@@ -168,18 +175,18 @@ const Alumnos = () => {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <Users className="h-6 w-6 text-blue-600" />
           Directorio de Alumnos
         </h2>
-        <div className="flex bg-gray-100 rounded-lg p-1">
-          <button onClick={() => setVista('lista')} className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'lista' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
+        <div className="flex w-full md:w-auto bg-gray-100 rounded-lg p-1">
+          <button onClick={() => setVista('lista')} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'lista' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
             <List className="h-4 w-4" /> Directorio
           </button>
 
           {tienePermisos && (
-            <button onClick={() => { limpiarFormulario(); setVista('crear'); setSuccess(''); setError(''); }} className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'crear' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
+            <button onClick={() => { limpiarFormulario(); setVista('crear'); setSuccess(''); setError(''); }} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'crear' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
               <UserPlus className="h-4 w-4" /> Nuevo Alumno
             </button>
           )}
@@ -290,9 +297,21 @@ const Alumnos = () => {
               </div>
             </div>
 
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre (s) *</label><input required type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Apellido Paterno *</label><input required type="text" value={apellidoPaterno} onChange={(e) => setApellidoPaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Apellido Materno</label><input type="text" value={apellidoMaterno} onChange={(e) => setApellidoMaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" /></div>
+            {/* Contenedor agrupado para Apellidos y Nombre */}
+            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Apellido Paterno *</label>
+                <input required type="text" value={apellidoPaterno} onChange={(e) => setApellidoPaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Apellido Materno</label>
+                <input type="text" value={apellidoMaterno} onChange={(e) => setApellidoMaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre (s) *</label>
+                <input required type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
 
             <div className="md:col-span-3 border-t pt-4">
               <label className="block text-sm font-bold text-gray-800 mb-1 flex items-center gap-2"><UserCircle className="h-5 w-5 text-gray-500"/> Vincular Padre / Madre / Tutor de Contacto</label>
@@ -332,10 +351,10 @@ const Alumnos = () => {
 
       {vista === 'detalle' && alumnoSeleccionado && (
         <div className="space-y-6" id="expediente-imprimible">
-          <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 flex justify-between items-start shadow-sm" data-html2canvas-ignore="false">
+          <div className="bg-blue-50 p-4 md:p-6 rounded-lg border border-blue-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm" data-html2canvas-ignore="false">
             <div>
-              <h3 className="text-2xl font-bold text-blue-900">{alumnoSeleccionado.nombre} {alumnoSeleccionado.apellidoPaterno} {alumnoSeleccionado.apellidoMaterno}</h3>
-              <div className="flex gap-4 mt-2">
+              <h3 className="text-xl md:text-2xl font-bold text-blue-900">{alumnoSeleccionado.nombre} {alumnoSeleccionado.apellidoPaterno} {alumnoSeleccionado.apellidoMaterno}</h3>
+              <div className="flex flex-wrap gap-2 md:gap-4 mt-2">
                 <span className="bg-white border border-blue-200 text-blue-800 text-xs font-bold px-3 py-1 rounded-full shadow-sm">
                   Matricula: {alumnoSeleccionado.matricula}
                 </span>
@@ -345,21 +364,21 @@ const Alumnos = () => {
               </div>
             </div>
 
-            <div className="flex gap-2" data-html2canvas-ignore="true">
+            <div className="flex flex-wrap gap-2 w-full md:w-auto mt-2 md:mt-0" data-html2canvas-ignore="true">
               <button
                 onClick={generarPDF}
                 disabled={isExporting}
-                className="flex items-center gap-1 text-sm bg-indigo-600 text-white px-4 py-2 rounded-lg border border-indigo-700 hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
+                className="flex items-center justify-center gap-1 text-sm bg-indigo-600 text-white px-4 py-2 rounded-lg border border-indigo-700 hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex-1 md:flex-none"
               >
                 <Download className="h-4 w-4" /> {isExporting ? 'Generando...' : 'Descargar PDF'}
               </button>
 
               {tienePermisos && (
-                <button onClick={prepararEdicion} className="flex items-center gap-1 text-sm bg-blue-600 text-white px-4 py-2 rounded-lg border border-blue-700 hover:bg-blue-700 transition-colors shadow-sm">
-                  <Edit className="h-4 w-4" /> Editar Datos
+                <button onClick={prepararEdicion} className="flex items-center justify-center gap-1 text-sm bg-blue-600 text-white px-4 py-2 rounded-lg border border-blue-700 hover:bg-blue-700 transition-colors shadow-sm flex-1 md:flex-none">
+                  <Edit className="h-4 w-4" /> Editar
                 </button>
               )}
-              <button onClick={() => setVista('lista')} className="text-sm bg-white px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">Volver al Listado</button>
+              <button onClick={() => setVista('lista')} className="text-sm bg-white px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50 transition-colors shadow-sm w-full md:w-auto">Volver</button>
             </div>
           </div>
 

@@ -41,6 +41,22 @@ const Login = () => {
     }
   };
 
+  const handleSolicitarRecuperacion = async () => {
+    const emailRecuperar = window.prompt("Introduce tu correo electrónico institucional o personal para recibir las instrucciones:");
+    
+    if (!emailRecuperar) return;
+
+    setIsLoading(true);
+    try {
+      await axios.post('https://api-sigie.delachemilio.xyz/api/recuperar-password', { email: emailRecuperar });
+      alert("Si el correo está registrado, recibirás un enlace de recuperación en unos minutos. Revisa tu bandeja de entrada y spam.");
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Error al procesar la solicitud.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     // Fondo con gradiente usando los colores del logo (Turquesa a Azul Profundo)
     <div className="min-h-screen bg-gradient-to-br from-teal-500 via-blue-600 to-blue-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -106,6 +122,20 @@ const Login = () => {
                   placeholder="Ingresa tu contraseña"
                 />
               </div>
+            </div>
+
+            <div className="flex items-center justify-end">
+              <button 
+                type="button" 
+                onClick={handleSolicitarRecuperacion}
+                className="text-sm font-medium text-blue-600 hover:text-blue-500"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
+
+            <div className="pt-2">
+               {/* Botón de ingresar existente... */}
             </div>
 
             <div className="pt-2">

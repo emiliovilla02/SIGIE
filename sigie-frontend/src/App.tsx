@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import DashboardLayout from './components/DashboardLayout';
 import Incidentes from './pages/Incidentes';
 import Alumnos from './pages/Alumnos';
@@ -9,6 +10,8 @@ import PortalTutor from './pages/PortalTutor';
 import Auditoria from './pages/Auditoria';
 import Enfermeria from './pages/Enfermeria';
 import Dashboard from './pages/Dashboard';
+import Intervenciones from './pages/Intervenciones';
+import Avisos from './pages/Avisos';
 
 function App() {
   return (
@@ -17,6 +20,9 @@ function App() {
         {/* Ruta pública */}
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
+
+        {/* Nueva ruta pública para el cambio de contraseña */}
+        <Route path="/reset-password" element={<ResetPassword />} />
         
         {/* Rutas Protegidas envueltas en el Layout - ESTA ES LA LÍNEA QUE FALTABA */}
         <Route path="/dashboard" element={<DashboardLayout />}>
@@ -30,6 +36,8 @@ function App() {
           <Route path="mis-hijos" element={<PortalTutor />} />
           <Route path="auditoria" element={<Auditoria />} />
           <Route path="enfermeria" element={<Enfermeria />} />
+          <Route path="intervenciones" element={<Intervenciones />} />
+          <Route path="avisos" element={<Avisos />} />
         </Route>
       </Routes>
     </BrowserRouter>

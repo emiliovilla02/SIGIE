@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, UserPlus, List, CheckCircle, XCircle, Shield, Edit, Search, Filter } from 'lucide-react';
+import { Users, UserPlus, List, CheckCircle, XCircle, Shield, Edit, Search, Filter, Trash2 } from 'lucide-react';
 
 const Usuarios = () => {
   const [vista, setVista] = useState<'lista' | 'crear' | 'editar'>('lista');
@@ -102,6 +102,27 @@ const Usuarios = () => {
     }
   };
 
+  const handleEliminarUsuario = async (id: number, nombreCompleto: string) => {
+    const confirmar = window.confirm(`⚠️ ADVERTENCIA: ¿Estás seguro de que deseas eliminar permanentemente a ${nombreCompleto}? Esta acción no se puede deshacer.`);
+    
+    if (!confirmar) return;
+
+    setIsLoading(true);
+    setError('');
+    try {
+      await axios.delete(`https://api-sigie.delachemilio.xyz/api/usuarios/${id}`, getConfig());
+      
+      setSuccess('Usuario eliminado de la base de datos.');
+      fetchUsuarios(); // Recargamos la tabla
+      
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Error al intentar eliminar el usuario');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   // Filtrado de Usuarios
   const usuariosFiltrados = usuarios.filter(u => {
     const termino = busqueda.toLowerCase();
@@ -115,16 +136,16 @@ const Usuarios = () => {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <Shield className="h-6 w-6 text-blue-900" />
           Gestion de Usuarios
         </h2>
-        <div className="flex bg-gray-100 rounded-lg p-1">
-          <button onClick={() => { limpiarFormulario(); setVista('lista'); }} className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'lista' ? 'bg-white shadow text-blue-900' : 'text-gray-600 hover:text-gray-900'}`}>
+        <div className="flex w-full md:w-auto bg-gray-100 rounded-lg p-1">
+          <button onClick={() => { limpiarFormulario(); setVista('lista'); }} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'lista' ? 'bg-white shadow text-blue-900' : 'text-gray-600 hover:text-gray-900'}`}>
             <List className="h-4 w-4" /> Personal
           </button>
-          <button onClick={() => { limpiarFormulario(); setVista('crear'); setSuccess(''); setError(''); }} className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'crear' ? 'bg-white shadow text-blue-900' : 'text-gray-600 hover:text-gray-900'}`}>
+          <button onClick={() => { limpiarFormulario(); setVista('crear'); setSuccess(''); setError(''); }} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'crear' ? 'bg-white shadow text-blue-900' : 'text-gray-600 hover:text-gray-900'}`}>
             <UserPlus className="h-4 w-4" /> Alta de Usuario
           </button>
         </div>
@@ -194,14 +215,27 @@ const Usuarios = () => {
                         <span className="text-green-600 font-medium">{u.estado || 'Activo'}</span>
                       </td>
                       <td className="p-4 text-center">
-                        {/* EVALUACION DE JERARQUIA PARA EDITAR */}
-                        {miRango > obtenerRangoRol(u.rol) || usuarioLogueado?.id === u.id ? (
-                          <button onClick={() => prepararEdicion(u)} className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1 mx-auto">
-                            <Edit className="h-4 w-4" /> Editar
-                          </button>
-                        ) : (
-                          <span className="text-xs text-gray-400 italic">No modificable</span>
-                        )}
+                        <div className="flex items-center justify-center gap-2">
+                          {/* EVALUACION DE JERARQUIA PARA EDITAR */}
+                          {miRango > obtenerRangoRol(u.rol) || usuarioLogueado?.id === u.id ? (
+                            <button onClick={() => prepararEdicion(u)} className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1">
+                              <Edit className="h-4 w-4" /> Editar
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">No modificable</span>
+                          )}
+
+                          {/* BOTON DE BORRAR: Exclusivo para ADMIN y no puede borrarse a sí mismo */}
+                          {usuarioLogueado?.rol === 'ADMIN' && usuarioLogueado?.id !== u.id && (
+                            <button 
+                              onClick={() => handleEliminarUsuario(u.id, `${u.nombre} ${u.apellidoPaterno}`)} 
+                              title="Eliminar Usuario"
+                              className="text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 p-1.5 rounded-md transition-colors"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -216,16 +250,16 @@ const Usuarios = () => {
         <form onSubmit={handleSubmit} className="max-w-2xl space-y-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
-              <input required type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-900" />
-            </div>
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Apellido Paterno *</label>
               <input required type="text" value={apellidoPaterno} onChange={(e) => setApellidoPaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-900" />
             </div>
-            <div className="col-span-2">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Apellido Materno</label>
               <input type="text" value={apellidoMaterno} onChange={(e) => setApellidoMaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-900" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre (s) *</label>
+              <input required type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-900" />
             </div>
           </div>
 

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { PlusCircle, List, AlertTriangle, CheckCircle, XCircle, MessageSquare, Clock, Users, Search, X, Trash2, Filter } from 'lucide-react';
+import { PlusCircle, List, AlertTriangle, CheckCircle, XCircle, MessageSquare, Clock, Users, Search, X, Trash2, Download } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import { toPng } from 'html-to-image';
 
 const Incidentes = () => {
   const [vista, setVista] = useState<'lista' | 'crear' | 'detalle'>('lista');
@@ -8,14 +10,12 @@ const Incidentes = () => {
   const [alumnos, setAlumnos] = useState<any[]>([]);
   const [incidenteSeleccionado, setIncidenteSeleccionado] = useState<any>(null);
   
+  const [busquedaGeneral, setBusquedaGeneral] = useState('');
+
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
-  // Estados de Búsqueda y Filtros para la Lista
-  const [busquedaLista, setBusquedaLista] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('');
-  const [filtroGravedad, setFiltroGravedad] = useState('');
 
   // Formulario Crear Incidente
   const [tipo, setTipo] = useState('Comportamiento');
@@ -23,7 +23,7 @@ const Incidentes = () => {
   const [descripcionBreve, setDescripcionBreve] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [alumnosSeleccionados, setAlumnosSeleccionados] = useState<number[]>([]);
-  const [busquedaAlumno, setBusquedaAlumno] = useState('');
+  const [busqueda, setBusqueda] = useState('');
 
   // Formulario Nuevo Seguimiento
   const [nuevoSeguimiento, setNuevoSeguimiento] = useState('');
@@ -35,6 +35,7 @@ const Incidentes = () => {
     if (str && str !== 'null') usuarioLogueado = JSON.parse(str);
   } catch (e) {}
   
+  // Solo Admin y Director tienen poder para borrar incidentes
   const puedeBorrar = usuarioLogueado?.rol === 'ADMIN' || usuarioLogueado?.rol === 'DIRECTOR';
   // ------------------------------------------------
 
@@ -87,7 +88,7 @@ const Incidentes = () => {
       }, getConfig());
 
       setSuccess('Incidente registrado correctamente. Notificaciones enviadas si aplica.');
-      setDescripcionBreve(''); setDescripcion(''); setAlumnosSeleccionados([]); setBusquedaAlumno('');
+      setDescripcionBreve(''); setDescripcion(''); setAlumnosSeleccionados([]); setBusqueda('');
       
       fetchIncidentes();
       setTimeout(() => setVista('lista'), 1500);
@@ -166,45 +167,80 @@ const Incidentes = () => {
     }
   };
 
-  // Buscador para el formulario de CREAR
-  const alumnosFormularioFiltrados = busquedaAlumno.trim() === '' 
+  // --- NUEVA LÓGICA DE PDF ---
+  const generarPDF = async () => {
+    const elemento = document.getElementById('incidente-imprimible');
+    if (!elemento) return;
+
+    setIsExporting(true);
+    try {
+      const dataUrl = await toPng(elemento, {
+        quality: 1,
+        pixelRatio: 2,
+        width: 1024,
+        style: {
+          width: '1024px',
+          margin: '0',
+          padding: '20px',
+          backgroundColor: '#ffffff'
+        },
+        filter: (node) => {
+          if (node.tagName !== 'SCRIPT' && node.getAttribute && node.getAttribute('data-html2canvas-ignore') === 'true') {
+            return false;
+          }
+          return true;
+        }
+      });
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = 210;
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Reporte_Incidente_${incidenteSeleccionado.id}.pdf`);
+
+      setSuccess('Expediente PDF generado correctamente.');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error("Error al exportar PDF:", error);
+      setError('Error al generar el documento PDF.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const alumnosFiltrados = busqueda.trim() === '' 
     ? [] 
     : alumnos.filter(a => 
-        a.nombre.toLowerCase().includes(busquedaAlumno.toLowerCase()) ||
-        a.apellidoPaterno.toLowerCase().includes(busquedaAlumno.toLowerCase()) ||
-        a.matricula.includes(busquedaAlumno)
+        a.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+        a.apellidoPaterno.toLowerCase().includes(busqueda.toLowerCase()) ||
+        a.matricula.includes(busqueda)
       );
-
-  // FILTRADO INTELIGENTE PARA LA LISTA PRINCIPAL
+  
+  // --- Filtrar la tabla de incidentes ---
   const incidentesFiltrados = incidentes.filter(inc => {
-    const terminoBusqueda = busquedaLista.toLowerCase();
-    const tituloIncidente = inc.descripcionBreve.toLowerCase();
+    const termino = busquedaGeneral.toLowerCase();
+    const folio = (inc.folio || "").toLowerCase();
+    // Unimos los nombres de todos los alumnos involucrados para buscar en ellos
+    const nombresAlumnos = inc.alumnos.map((a: any) => `${a.nombre} ${a.apellidoPaterno}`).join(' ').toLowerCase();
     
-    // Busca si algún alumno de este incidente coincide con lo que el usuario escribió
-    const alumnosMatch = inc.alumnos.some((a: any) => 
-      `${a.nombre} ${a.apellidoPaterno} ${a.matricula}`.toLowerCase().includes(terminoBusqueda)
-    );
-
-    const coincideBusqueda = tituloIncidente.includes(terminoBusqueda) || alumnosMatch;
-    const coincideEstado = filtroEstado === '' || inc.estado === filtroEstado;
-    const coincideGravedad = filtroGravedad === '' || inc.gravedad === filtroGravedad;
-
-    return coincideBusqueda && coincideEstado && coincideGravedad;
+    return folio.includes(termino) || nombresAlumnos.includes(termino);
   });
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <AlertTriangle className="h-6 w-6 text-blue-600" />
           Módulo de Incidentes
         </h2>
-        <div className="flex bg-gray-100 rounded-lg p-1">
-          <button onClick={() => setVista('lista')} className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'lista' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
+        <div className="flex w-full md:w-auto bg-gray-100 rounded-lg p-1">
+          <button onClick={() => setVista('lista')} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'lista' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
             <List className="h-4 w-4" /> Ver Historial
           </button>
-          <button onClick={() => { setVista('crear'); setSuccess(''); setError(''); setAlumnosSeleccionados([]); setBusquedaAlumno(''); }} className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'crear' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
+          <button onClick={() => { setVista('crear'); setSuccess(''); setError(''); setAlumnosSeleccionados([]); setBusqueda(''); }} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'crear' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
             <PlusCircle className="h-4 w-4" /> Registrar Nuevo
           </button>
         </div>
@@ -215,51 +251,25 @@ const Incidentes = () => {
 
       {vista === 'lista' && (
         <div className="space-y-4">
-          
-          {/* NUEVA BARRA DE BÚSQUEDA Y FILTROS */}
+          {/* NUEVO: BARRA DE BÚSQUEDA GENERAL */}
           <div className="flex flex-col md:flex-row gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Buscar por asunto, matrícula o nombre de alumno..."
-                value={busquedaLista}
-                onChange={(e) => setBusquedaLista(e.target.value)}
-                className="pl-10 w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
+                placeholder="Buscar por folio o nombre del alumno..."
+                value={busquedaGeneral}
+                onChange={(e) => setBusquedaGeneral(e.target.value)}
+                className="pl-10 w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
-            </div>
-            
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <Filter className="h-5 w-5 text-gray-400" />
-              <select
-                value={filtroEstado}
-                onChange={(e) => setFiltroEstado(e.target.value)}
-                className="w-full md:w-36 border border-gray-300 rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Todos los Estados</option>
-                <option value="ABIERTO">Abiertos</option>
-                <option value="EN_PROCESO">En Proceso</option>
-                <option value="CERRADO">Cerrados</option>
-              </select>
-
-              <select
-                value={filtroGravedad}
-                onChange={(e) => setFiltroGravedad(e.target.value)}
-                className="w-full md:w-36 border border-gray-300 rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Cualquier Gravedad</option>
-                <option value="Alta">Alta</option>
-                <option value="Media">Media</option>
-                <option value="Leve">Leve</option>
-              </select>
             </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-gray-100 border-b border-gray-200 text-sm text-gray-600">
-                  <th className="p-4">Fecha</th>
+                <tr className="bg-gray-50 border-b border-gray-200 text-sm text-gray-600">
+                  <th className="p-4">Folio / Fecha</th>
                   <th className="p-4">Involucrados</th>
                   <th className="p-4">Estado / Gravedad</th>
                   <th className="p-4">Reportado Por</th>
@@ -268,13 +278,20 @@ const Incidentes = () => {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {incidentesFiltrados.length === 0 ? (
-                  <tr><td colSpan={5} className="p-8 text-center text-gray-500">No se encontraron incidentes con los filtros seleccionados.</td></tr>
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-gray-500">
+                      {busquedaGeneral ? 'No se encontraron incidentes que coincidan con la búsqueda.' : 'No hay incidentes registrados aún.'}
+                    </td>
+                  </tr>
                 ) : (
                   incidentesFiltrados.map((inc) => (
                     <tr key={inc.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="p-4 text-sm text-gray-600">{new Date(inc.fechaIncidencia).toLocaleDateString()}</td>
+                      <td className="p-4 text-sm">
+                        <span className="font-bold text-blue-900 block">{inc.folio || `INC-OLD-${inc.id}`}</span>
+                        <span className="text-gray-500 text-xs">{new Date(inc.fechaIncidencia).toLocaleDateString()}</span>
+                      </td>
                       <td className="p-4 text-sm font-medium text-gray-900">
-                        {inc.alumnos.map((a: any) => a.nombre).join(', ')}
+                        {inc.alumnos.map((a: any) => `${a.nombre} ${a.apellidoPaterno}`).join(', ')}
                         {inc.alumnos.length > 1 && <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Grupal</span>}
                       </td>
                       <td className="p-4">
@@ -327,19 +344,19 @@ const Incidentes = () => {
                 <input 
                   type="text" 
                   placeholder="Buscar por nombre o matrícula..." 
-                  value={busquedaAlumno}
-                  onChange={(e) => setBusquedaAlumno(e.target.value)}
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg pl-10 p-2.5 text-sm focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div className="border border-gray-200 rounded-lg overflow-hidden h-48 overflow-y-auto bg-gray-50 p-2 space-y-2">
-                {busquedaAlumno.trim() === '' ? (
+                {busqueda.trim() === '' ? (
                   <p className="text-center text-gray-500 text-sm mt-4">Ingresa una matrícula o nombre para buscar.</p>
-                ) : alumnosFormularioFiltrados.length === 0 ? (
+                ) : alumnosFiltrados.length === 0 ? (
                   <p className="text-center text-gray-500 text-sm mt-4">No se encontraron coincidencias.</p>
                 ) : (
-                  alumnosFormularioFiltrados.map((a) => (
+                  alumnosFiltrados.map((a) => (
                     <label key={a.id} className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${alumnosSeleccionados.includes(a.id) ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200 hover:bg-gray-100'}`}>
                       <input type="checkbox" checked={alumnosSeleccionados.includes(a.id)} onChange={() => toggleAlumno(a.id)} className="h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"/>
                       <div>
@@ -377,14 +394,17 @@ const Incidentes = () => {
       )}
 
       {vista === 'detalle' && incidenteSeleccionado && (
-        <div className="space-y-8">
+        <div className="space-y-8" id="incidente-imprimible">
           <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
             <div className={`absolute top-0 left-0 w-2 h-full ${incidenteSeleccionado.gravedad === 'Alta' ? 'bg-red-500' : incidenteSeleccionado.gravedad === 'Media' ? 'bg-orange-400' : 'bg-yellow-400'}`}></div>
             
-            <div className="flex justify-between items-start ml-2">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ml-0 md:ml-2">
               <div>
-                <div className="flex items-center gap-3">
-                  <h3 className="text-xl font-bold text-gray-900">{incidenteSeleccionado.descripcionBreve}</h3>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h3 className="text-xl font-bold text-gray-900">
+                    <span className="text-blue-600 mr-2">[{incidenteSeleccionado.folio || `INC-OLD-${incidenteSeleccionado.id}`}]</span> 
+                    {incidenteSeleccionado.descripcionBreve}
+                  </h3>
                   <span className={`px-3 py-1 text-xs font-bold rounded-full border ${
                     incidenteSeleccionado.estado === 'ABIERTO' ? 'bg-red-100 text-red-700 border-red-200' :
                     incidenteSeleccionado.estado === 'EN_PROCESO' ? 'bg-blue-100 text-blue-700 border-blue-200' :
@@ -395,25 +415,35 @@ const Incidentes = () => {
                 </div>
                 <p className="text-sm text-gray-500 mt-1">Reportado el {new Date(incidenteSeleccionado.fechaIncidencia).toLocaleDateString()} a las {new Date(incidenteSeleccionado.fechaIncidencia).toLocaleTimeString()}</p>
               </div>
-              <div className="flex gap-2">
+              
+              <div className="flex flex-wrap gap-2 w-full md:w-auto mt-2 md:mt-0" data-html2canvas-ignore="true">
+                {/* BOTÓN NUEVO: DESCARGAR PDF */}
+                <button 
+                  onClick={generarPDF} 
+                  disabled={isExporting} 
+                  className="flex-1 md:flex-none flex items-center justify-center gap-1 border border-indigo-600 bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  <Download className="h-4 w-4" /> {isExporting ? 'Generando...' : 'Descargar PDF'}
+                </button>
+
                 {incidenteSeleccionado.estado === 'ABIERTO' && (
-                  <button onClick={() => handleCambiarEstado('EN_PROCESO')} className="border border-blue-600 text-blue-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-50">Atender</button>
+                  <button onClick={() => handleCambiarEstado('EN_PROCESO')} className="flex-1 md:flex-none justify-center border border-blue-600 text-blue-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-50">Atender</button>
                 )}
                 {incidenteSeleccionado.estado === 'EN_PROCESO' && (
-                  <button onClick={() => handleCambiarEstado('CERRADO')} className="border border-green-600 text-green-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-50">Liberar</button>
+                  <button onClick={() => handleCambiarEstado('CERRADO')} className="flex-1 md:flex-none justify-center border border-green-600 text-green-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-50">Liberar</button>
                 )}
                 
                 {puedeBorrar && (
                   <button 
                     onClick={handleEliminarIncidente} 
                     disabled={isLoading}
-                    className="flex items-center gap-1 border border-red-600 text-red-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50 transition-colors"
+                    className="flex-1 md:flex-none flex items-center justify-center gap-1 border border-red-600 text-red-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50 transition-colors"
                   >
                     <Trash2 className="h-4 w-4" /> {isLoading ? 'Borrando...' : 'Eliminar'}
                   </button>
                 )}
 
-                <button onClick={() => setVista('lista')} className="border px-4 py-1.5 rounded-lg text-gray-600 hover:bg-gray-100 text-sm font-medium bg-white">Volver</button>
+                <button onClick={() => setVista('lista')} className="flex-1 md:flex-none justify-center border px-4 py-1.5 rounded-lg text-gray-600 hover:bg-gray-100 text-sm font-medium bg-white">Volver</button>
               </div>
             </div>
 
@@ -444,7 +474,9 @@ const Incidentes = () => {
                 </div>
               ))}
             </div>
-            <div className="mt-10 bg-blue-50/50 p-6 rounded-xl border border-blue-100 max-w-3xl mx-auto">
+            
+            {/* Ocultamos esta caja en la impresión del PDF */}
+            <div className="mt-10 bg-blue-50/50 p-6 rounded-xl border border-blue-100 max-w-3xl mx-auto" data-html2canvas-ignore="true">
               <h4 className="font-bold text-gray-800 mb-3 text-sm">Agregar Actualización / Seguimiento Médico</h4>
               <form onSubmit={handleAgregarSeguimiento}>
                 <textarea required rows={3} value={nuevoSeguimiento} onChange={(e) => setNuevoSeguimiento(e.target.value)} placeholder="Ej. Se atendió al alumno en enfermería, se administró medicamento y reposó..." className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500"></textarea>
