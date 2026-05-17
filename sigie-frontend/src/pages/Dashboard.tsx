@@ -71,7 +71,7 @@ const Dashboard = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-bold text-gray-800">Panel de Control General</h2>
+          <h2 className="text-3xl font-bold text-gray-800">Generar Estadísticas</h2>
           <p className="text-gray-500 mt-1">Métricas y estado general de la institución en tiempo real.</p>
         </div>
       </div>

@@ -150,7 +150,7 @@ const Login = () => {
                     Iniciando sesión...
                   </>
                 ) : (
-                  'Ingresar al Sistema'
+                  'Iniciar Sesión'
                 )}
               </button>
             </div>

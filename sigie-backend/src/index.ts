@@ -7,6 +7,10 @@ import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import jwt from 'jsonwebtoken';
 import { verificarToken, AuthRequest } from './middlewares/auth';
 import nodemailer from 'nodemailer';
+import fs from 'fs';
+import path from 'path';
+import { exec } from 'child_process';
+import cron from 'node-cron';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -178,6 +182,16 @@ app.post('/api/login', async (req: Request, res: Response): Promise<void> => {
 
     // 4. Enviar respuesta exitosa (sin la contraseña)
     const { password: _, ...usuarioSinPassword } = usuario;
+
+    // REGISTRO DE AUDITORÍA: Capturar IP y Login
+    const ipAcceso = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Desconocida';
+    await prisma.auditoria.create({
+      data: {
+        accion: 'ACCESO_SISTEMA', entidad: 'SISTEMA',
+        detalles: `Inicio de sesión exitoso desde IP: ${ipAcceso}`,
+        usuarioId: usuario.id, ipAddress: String(ipAcceso)
+      }
+    });
 
     res.json({
       message: 'Inicio de sesión exitoso',
@@ -354,10 +368,8 @@ app.get('/api/alumnos', verificarToken, async (req: AuthRequest, res: Response) 
   try {
     const alumnos = await prisma.alumno.findMany({
       include: {
-        // Le pedimos a Prisma que traiga también el nombre y correo del papá/mamá
-        tutor: { 
-          select: { nombre: true, apellidoPaterno: true, email: true } 
-        }
+        // Le pedimos a Prisma que traiga también el nombre y correo de los turores asociados a cada alumno, para mostrarlo en el listado
+        tutores: { select: { id: true, nombre: true, apellidoPaterno: true, email: true } }
       },
       orderBy: { id: 'desc' }
     });
@@ -382,7 +394,7 @@ app.get('/api/alumnos/:id', verificarToken, async (req: AuthRequest, res: Respon
         atenciones: {
           orderBy: { fechaAtencion: 'desc' }
         },
-	tutor: true,
+	tutores: true,
         // NUEVO: Traemos el historial de enfermería
         atenciones: {
           orderBy: { fechaAtencion: 'desc' }
@@ -412,7 +424,7 @@ app.post('/api/alumnos', verificarToken, async (req: AuthRequest, res: Response)
       return;
     }
 
-    const { matricula, nombre, apellidoPaterno, apellidoMaterno, grado, grupo, tutorId, expedienteMedico } = req.body;
+    const { matricula, nombre, apellidoPaterno, apellidoMaterno, grado, grupo, tutoresIds, expedienteMedico } = req.body;
 
     if (!matricula || !nombre || !apellidoPaterno || !grado) {
       res.status(400).json({ error: 'Faltan campos obligatorios' });
@@ -420,11 +432,15 @@ app.post('/api/alumnos', verificarToken, async (req: AuthRequest, res: Response)
     }
 
     const nuevoAlumno = await prisma.alumno.create({
-      data: { matricula, nombre, apellidoPaterno, apellidoMaterno, grado, 
-	grupo: grupo === '' ? null : grupo,
-	expedienteMedico,
-	tutorId: tutorId ? Number(tutorId) : null
-	}
+      data: { 
+        matricula, nombre, apellidoPaterno, apellidoMaterno, grado, 
+        grupo: grupo === '' ? null : grupo,
+        expedienteMedico,
+        // Conectamos múltiples tutores si los enviaron
+        tutores: tutoresIds && tutoresIds.length > 0 ? {
+          connect: tutoresIds.map((id: any) => ({ id: Number(id) }))
+        } : undefined
+      }
     });
 
     res.status(201).json({ message: 'Alumno registrado exitosamente', alumno: nuevoAlumno });
@@ -449,15 +465,17 @@ app.put('/api/alumnos/:id', verificarToken, async (req: AuthRequest, res: Respon
     }
 
     const { id } = req.params;
-    const { matricula, nombre, apellidoPaterno, apellidoMaterno, grado, grupo, expedienteMedico, tutorId } = req.body;
+    const { matricula, nombre, apellidoPaterno, apellidoMaterno, grado, grupo, expedienteMedico, tutoresIds } = req.body;
 
     const alumnoActualizado = await prisma.alumno.update({
       where: { id: Number(id) },
-      data: { matricula, nombre, apellidoPaterno, apellidoMaterno, grado, 
-	grupo: grupo === '' ? null : grupo,
-	expedienteMedico,
-	tutorId: tutorId ? Number(tutorId) : null
-	}
+      data: { 
+        matricula, nombre, apellidoPaterno, apellidoMaterno, grado, 
+        grupo: grupo === '' ? null : grupo,
+        expedienteMedico,
+        // Usamos 'set' para reemplazar la lista completa de tutores por la nueva
+        tutores: tutoresIds ? { set: tutoresIds.map((id: any) => ({ id: Number(id) })) } : { set: [] }
+      }
     });
 
     res.json({ message: 'Información actualizada correctamente', alumno: alumnoActualizado });
@@ -481,17 +499,11 @@ app.get('/api/mis-hijos', verificarToken, async (req: AuthRequest, res: Response
       return;
     }
 
-    // Buscamos a los alumnos que tengan como tutorId el ID del usuario actual
+    // Busca alumnos donde la lista de 'tutores' contenga mi ID
     const misHijos = await prisma.alumno.findMany({
-      where: { tutorId: req.usuario.id },
+      where: { tutores: { some: { id: req.usuario.id } } },
       include: {
-        // Traemos también el historial de incidentes de cada hijo
-        incidentes: {
-          include: {
-            reportadoPor: { select: { nombre: true, apellidoPaterno: true, rol: true } }
-          },
-          orderBy: { fechaIncidencia: 'desc' }
-        }
+        incidentes: { include: { reportadoPor: { select: { nombre: true, apellidoPaterno: true, rol: true } } }, orderBy: { fechaIncidencia: 'desc' } }
       }
     });
 
@@ -515,14 +527,11 @@ app.put('/api/mis-hijos/:id/expediente', verificarToken, async (req: AuthRequest
     const { expedienteMedico } = req.body;
 
     // Verificación de seguridad clave: ¿Este alumno realmente es hijo de este tutor?
-    const alumno = await prisma.alumno.findUnique({
-      where: { id: alumnoId }
+    const alumno = await prisma.alumno.findFirst({
+      where: { id: alumnoId, tutores: { some: { id: req.usuario.id } } }
     });
 
-    if (!alumno || alumno.tutorId !== req.usuario.id) {
-      res.status(403).json({ error: 'Operación rechazada: No tienes permiso para modificar este expediente.' });
-      return;
-    }
+    if (!alumno) { res.status(403).json({ error: 'No tienes permiso.' }); return; }
 
     // Actualizamos ÚNICAMENTE el campo médico
     const alumnoActualizado = await prisma.alumno.update({
@@ -566,6 +575,16 @@ app.post('/api/incidentes', verificarToken, async (req: AuthRequest, res: Respon
       }
     });
 
+    // REGISTRO DE AUDITORÍA: Creación de incidente
+    const ipIncidente = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Desconocida';
+    await prisma.auditoria.create({
+      data: {
+        accion: 'CREAR_INCIDENTE', entidad: 'INCIDENTE', entidadId: nuevoIncidente.id,
+        detalles: `Se registró un incidente gravedad ${gravedad}: "${descripcionBreve}"`,
+        usuarioId: req.usuario.id, ipAddress: String(ipIncidente)
+      }
+    });
+
     // --- Generación de Folio Automático ---
     // Crea un folio tipo: INC-2026-0005
     const folioGenerado = `INC-${new Date().getFullYear()}-${nuevoIncidente.id.toString().padStart(4, '0')}`;
@@ -579,44 +598,45 @@ app.post('/api/incidentes', verificarToken, async (req: AuthRequest, res: Respon
     // Buscamos a los alumnos involucrados y traemos los datos de sus tutores
     const alumnosInvolucrados = await prisma.alumno.findMany({
       where: { id: { in: alumnosIds } },
-      include: { tutor: true }
+      include: { tutores: true }
     });
 
     // Recorremos cada alumno afectado
     for (const alumno of alumnosInvolucrados) {
       // Si el alumno tiene un tutor asignado y el tutor tiene correo...
-      if (alumno.tutor && alumno.tutor.email) {
-        try {
-          // Disparamos el correo electrónico
-          await transporter.sendMail({
-            from: `"Sistema SIGIE" <${process.env.EMAIL_USER}>`,
-            to: alumno.tutor.email,
-            subject: `🚨 Aviso SIGIE: Nuevo reporte registrado - ${alumno.nombre} ${alumno.apellidoPaterno}`,
-            html: `
-              <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px;">
-                <h2 style="color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;">Aviso Oficial del Sistema SIGIE</h2>
-                <p>Estimado/a <strong>${alumno.tutor.nombre} ${alumno.tutor.apellidoPaterno}</strong>,</p>
-                <p>Le informamos que el personal de la institución ha registrado un nuevo incidente que involucra a su hijo/a <strong>${alumno.nombre}</strong>.</p>
-                
-                <div style="background-color: #f3f4f6; padding: 15px; border-left: 4px solid ${gravedad === 'Alta' ? '#ef4444' : gravedad === 'Media' ? '#f97316' : '#eab308'}; margin: 20px 0;">
-                  <p style="margin: 0 0 10px 0;"><strong>Categoría:</strong> ${tipo}</p>
-                  <p style="margin: 0 0 10px 0;"><strong>Gravedad:</strong> ${gravedad}</p>
-                  <p style="margin: 0;"><strong>Asunto Principal:</strong> ${descripcionBreve}</p>
-                </div>
+      for (const tutor of alumno.tutores) {
+        if (tutor.email) {
+          try {
+            await transporter.sendMail({
+              from: `"Sistema SIGIE" <${process.env.EMAIL_USER}>`,
+              to: tutor.email,
+              subject: `🚨 Aviso SIGIE: Nuevo reporte registrado - ${alumno.nombre} ${alumno.apellidoPaterno}`,
+              html: `
+                <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px;">
+                  <h2 style="color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;">Aviso Oficial del Sistema SIGIE</h2>
+                  <p>Estimado/a <strong>${tutor.nombre} ${tutor.apellidoPaterno}</strong>,</p>
+                  <p>Le informamos que el personal de la institución ha registrado un nuevo incidente que involucra a su hijo/a <strong>${alumno.nombre}</strong>.</p>
+                  
+                  <div style="background-color: #f3f4f6; padding: 15px; border-left: 4px solid ${gravedad === 'Alta' ? '#ef4444' : gravedad === 'Media' ? '#f97316' : '#eab308'}; margin: 20px 0;">
+                    <p style="margin: 0 0 10px 0;"><strong>Categoría:</strong> ${tipo}</p>
+                    <p style="margin: 0 0 10px 0;"><strong>Gravedad:</strong> ${gravedad}</p>
+                    <p style="margin: 0;"><strong>Asunto Principal:</strong> ${descripcionBreve}</p>
+                  </div>
 
-                <p>Para conocer los detalles completos del reporte y darle seguimiento, por favor inicie sesión en su <strong>Portal Familiar</strong>.</p>
-                <br>
-                <a href="http://localhost:5173/login" style="background-color: #1e3a8a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Acceder al Portal SIGIE</a>
-                <hr style="border: none; border-top: 1px solid #e5e7eb; margin-top: 30px;" />
-                <p style="font-size: 11px; color: #6b7280; text-align: center;">Este es un mensaje automático generado por el Sistema de Información para la Gestión de Incidentes Escolares (SIGIE). Por favor no responda directamente a esta dirección de correo.</p>
-              </div>
-            `
-          });
-          console.log(`Correo de notificación enviado exitosamente a: ${alumno.tutor.email}`);
-        } catch (mailError) {
-          console.error(`Fallo al enviar correo a ${alumno.tutor.email}:`, mailError);
+                  <p>Para conocer los detalles completos del reporte y darle seguimiento, por favor inicie sesión en su <strong>Portal Familiar</strong>.</p>
+                  <br>
+                  <a href="https://sigie.delachemilio.xyz" style="background-color: #1e3a8a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Acceder al Portal SIGIE</a>
+                  <hr style="border: none; border-top: 1px solid #e5e7eb; margin-top: 30px;" />
+                  <p style="font-size: 11px; color: #6b7280; text-align: center;">Este es un mensaje automático generado por el Sistema de Información para la Gestión de Incidentes Escolares (SIGIE). Por favor no responda directamente a esta dirección de correo.</p>
+                </div>
+              `
+            });
+            console.log(`Correo de notificación enviado exitosamente a: ${tutor.email}`);
+          } catch (mailError) {
+            console.error(`Fallo al enviar correo a ${tutor.email}:`, mailError);
+          }
         }
-      }
+      } 
     }
 
     res.status(201).json({ message: 'Incidente registrado exitosamente', incidente: nuevoIncidente });
@@ -674,12 +694,56 @@ app.delete('/api/incidentes/:id', verificarToken, async (req: AuthRequest, res: 
   }
 });
 
+// NUEVO: EDITAR UN INCIDENTE (CUMPLE RF-005)
+app.put('/api/incidentes/:id', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // 1. Verificación de permisos: Admin, Director o Enfermera
+    if (!['ADMIN', 'DIRECTOR', 'ENFERMERA'].includes(req.usuario?.rol || '')) {
+      res.status(403).json({ error: 'Nivel de jerarquía insuficiente para editar incidentes.' });
+      return;
+    }
+
+    const incidenteId = Number(req.params.id);
+    const { tipo, gravedad, descripcionBreve, descripcion } = req.body;
+
+    const incidenteAntiguo = await prisma.incidente.findUnique({ where: { id: incidenteId } });
+    if (!incidenteAntiguo) {
+      res.status(404).json({ error: 'Incidente no encontrado.' });
+      return;
+    }
+
+    // 2. Actualizamos la información del incidente
+    const incidenteActualizado = await prisma.incidente.update({
+      where: { id: incidenteId },
+      data: { tipo, gravedad, descripcionBreve, descripcion }
+    });
+
+    // 3. LA CAJA NEGRA: Registramos la edición en la Auditoría
+    const ipIncidente = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Desconocida';
+    await prisma.auditoria.create({
+      data: {
+        accion: 'EDITAR_INCIDENTE',
+        entidad: 'INCIDENTE',
+        entidadId: incidenteId,
+        detalles: `Edición de datos. Antes: "${incidenteAntiguo.descripcionBreve}" | Ahora: "${descripcionBreve}"`,
+        usuarioId: req.usuario.id,
+        ipAddress: String(ipIncidente)
+      }
+    });
+
+    res.json({ message: 'Incidente actualizado correctamente y registrado en auditoría.', incidente: incidenteActualizado });
+  } catch (error) {
+    console.error('Error al editar incidente:', error);
+    res.status(500).json({ error: 'Error interno al intentar editar el registro.' });
+  }
+});
+
 // OBTENER todos los incidentes (Incluye el hilo de Seguimientos y Alumnos en plural)
 app.get('/api/incidentes', verificarToken, async (req: AuthRequest, res: Response) => {
   try {
     const incidentes = await prisma.incidente.findMany({
       include: {
-        alumnos: { select: { id: true, matricula: true, nombre: true, apellidoPaterno: true } },
+        alumnos: { select: { id: true, matricula: true, nombre: true, apellidoPaterno: true, expedienteMedico: true } },
         reportadoPor: { select: { nombre: true, apellidoPaterno: true, rol: true } },
         seguimientos: {
           include: { autor: { select: { nombre: true, apellidoPaterno: true, rol: true } } },
@@ -720,6 +784,87 @@ app.post('/api/incidentes/:id/seguimientos', verificarToken, async (req: AuthReq
   } catch (error) {
     console.error('Error al agregar seguimiento:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// NUEVO: AGENDAR REUNIÓN DE SEGUIMIENTO (Cumple RF-012)
+app.post('/api/incidentes/:id/reuniones', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const incidenteId = Number(req.params.id);
+    const { fecha, hora, modalidad, lugarEnlace, motivo } = req.body;
+    const autorId = req.usuario.id;
+
+    if (!fecha || !hora || !motivo) {
+      res.status(400).json({ error: 'Faltan datos obligatorios para agendar la reunión.' });
+      return;
+    }
+
+    // 1. Obtener el incidente y todos los tutores de los alumnos involucrados
+    const incidente = await prisma.incidente.findUnique({
+      where: { id: incidenteId },
+      include: {
+        alumnos: { include: { tutores: true } }
+      }
+    });
+
+    if (!incidente) {
+      res.status(404).json({ error: 'Incidente no encontrado.' });
+      return;
+    }
+
+    // 2. Crear el registro visual en el historial del incidente (Seguimiento)
+    const descripcionReunion = `📅 [REUNIÓN CONVOCADA]\nMotivo: ${motivo}\nFecha: ${fecha} a las ${hora}\nModalidad: ${modalidad}\nLugar / Enlace: ${lugarEnlace || 'Por definir'}`;
+
+    const nuevoSeguimiento = await prisma.seguimiento.create({
+      data: {
+        descripcion: descripcionReunion,
+        incidenteId,
+        autorId
+      }
+    });
+
+    // 3. Recopilar correos únicos de los tutores (evitar duplicados si son hermanos)
+    const correosDestino = new Set<string>();
+    incidente.alumnos.forEach((alumno: any) => {
+      alumno.tutores.forEach((tutor: any) => {
+        if (tutor.email) correosDestino.add(tutor.email);
+      });
+    });
+
+    // 4. Disparar los correos automáticos
+    if (correosDestino.size > 0) {
+      const destinatariosArray = Array.from(correosDestino);
+
+      await transporter.sendMail({
+        from: `"Dirección Escolar SIGIE" <${process.env.EMAIL_USER}>`,
+        bcc: destinatariosArray.join(', '), // Usamos BCC para proteger la privacidad
+        subject: `📅 Cita Programada - Seguimiento de Incidente Escolar`,
+        html: `
+          <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px;">
+            <h2 style="color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;">Convocatoria a Reunión de Seguimiento</h2>
+            <p>Estimado Padre de Familia / Tutor,</p>
+            <p>La institución ha programado una sesión de seguimiento referente al reporte disciplinario / médico <strong>[${incidente.folio || `INC-OLD-${incidente.id}`}]</strong>.</p>
+            
+            <div style="background-color: #f3f4f6; padding: 15px; border-left: 4px solid #3b82f6; margin: 20px 0;">
+              <p style="margin: 0 0 10px 0;"><strong>Motivo de la Cita:</strong> ${motivo}</p>
+              <p style="margin: 0 0 10px 0;"><strong>Fecha programada:</strong> ${fecha}</p>
+              <p style="margin: 0 0 10px 0;"><strong>Hora:</strong> ${hora}</p>
+              <p style="margin: 0 0 10px 0;"><strong>Modalidad:</strong> ${modalidad}</p>
+              <p style="margin: 0;"><strong>Lugar / Enlace:</strong> ${lugarEnlace || 'Por definir'}</p>
+            </div>
+
+            <p>Le solicitamos atentamente su asistencia y puntualidad. Si tiene algún inconveniente, por favor comuníquese inmediatamente con la dirección escolar.</p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin-top: 30px;" />
+            <p style="font-size: 11px; color: #6b7280; text-align: center;">Este es un mensaje automático generado por el Sistema SIGIE.</p>
+          </div>
+        `
+      });
+    }
+
+    res.status(201).json({ message: 'Reunión programada y notificada con éxito.', seguimiento: nuevoSeguimiento });
+  } catch (error) {
+    console.error('Error al programar reunión:', error);
+    res.status(500).json({ error: 'Error interno del servidor al agendar la reunión.' });
   }
 });
 
@@ -788,23 +933,18 @@ app.get('/api/reportes/stats', verificarToken, async (req: AuthRequest, res: Res
 // ==========================================
 app.get('/api/auditoria', verificarToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // Seguridad Máxima: Solo el ADMIN puede ver los registros de borrado
-    if (req.usuario?.rol !== 'ADMIN') {
-      res.status(403).json({ error: 'Acceso denegado. Se requiere nivel de Administrador.' });
+    // Seguridad: ADMIN y DIRECTOR pueden ver la bitácora
+    if (req.usuario?.rol !== 'ADMIN' && req.usuario?.rol !== 'DIRECTOR') {
+      res.status(403).json({ error: 'Acceso denegado. Se requiere nivel directivo.' });
       return;
     }
-
     const registros = await prisma.auditoria.findMany({
-      include: {
-        usuario: { select: { nombre: true, apellidoPaterno: true, rol: true } }
-      },
-      orderBy: { fecha: 'desc' } // Los más recientes primero
+      include: { usuario: { select: { nombre: true, apellidoPaterno: true, rol: true } } },
+      orderBy: { fecha: 'desc' }
     });
-
     res.json(registros);
   } catch (error) {
-    console.error('Error al cargar auditoría:', error);
-    res.status(500).json({ error: 'Error interno del servidor al cargar la bitácora.' });
+    res.status(500).json({ error: 'Error al cargar la bitácora.' });
   }
 });
 
@@ -1104,6 +1244,146 @@ app.get('/api/avisos/mis-notificaciones', verificarToken, async (req: AuthReques
     res.json(avisos);
   } catch (error) {
     res.status(500).json({ error: 'Error al cargar notificaciones' });
+  }
+});
+
+// ==========================================
+// MÓDULO DE COPIAS DE SEGURIDAD (BACKUPS)
+// ==========================================
+
+// Función central que realiza la magia del respaldo
+const generarBackupDB = async (tipo: string = 'AUTOMATICO') => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // 1. Validar configuración
+      let config = await prisma.configuracionBackup.findUnique({ where: { id: 1 } });
+      if (!config) {
+        // Si no existe, la creamos por defecto apuntando al correo del sistema
+        config = await prisma.configuracionBackup.create({
+          data: { id: 1, correoDestino: process.env.EMAIL_USER || 'admin@escuela.edu' }
+        });
+      }
+
+      // 2. Preparar el archivo y la carpeta
+      const fecha = new Date().toISOString().replace(/[:.]/g, '-');
+      const nombreArchivo = `sigie_backup_${fecha}.sql`;
+      const backupPath = path.join(__dirname, 'backups');
+      
+      if (!fs.existsSync(backupPath)) {
+        fs.mkdirSync(backupPath); // Crea la carpeta 'backups' si no existe
+      }
+      const filePath = path.join(backupPath, nombreArchivo);
+
+      // 3. Comando nativo de MariaDB (Usando las credenciales de tu Prisma)
+      const dumpCommand = `mariadb-dump -u sigie_user -psigie12345 sigie_db > ${filePath}`;
+
+      // 4. Ejecutar el comando en el sistema operativo
+      exec(dumpCommand, async (error, stdout, stderr) => {
+        if (error) {
+          console.error("Error al generar el respaldo SQL:", error);
+          await prisma.historialBackup.create({ data: { nombreArchivo, estado: 'FALLIDO', tipo } });
+          return reject(error);
+        }
+
+        const stats = fs.statSync(filePath);
+
+        // 5. Registrar en el historial como Exitoso
+        await prisma.historialBackup.create({
+          data: { nombreArchivo, tamanoBytes: stats.size, estado: 'EXITOSO', tipo }
+        });
+
+        await prisma.configuracionBackup.update({
+          where: { id: 1 },
+          data: { ultimoRespaldo: new Date() }
+        });
+
+        // 6. Enviar copia al correo del administrador
+        await transporter.sendMail({
+          from: `"SIGIE Backups" <${process.env.EMAIL_USER}>`,
+          to: config.correoDestino,
+          subject: `📦 Respaldo de Base de Datos SIGIE - ${tipo}`,
+          html: `<p>Se ha generado exitosamente una copia de seguridad de la base de datos (<strong>${nombreArchivo}</strong>).</p><p>Se adjunta el archivo .sql para su custodia.</p>`,
+          attachments: [{ filename: nombreArchivo, path: filePath }]
+        });
+
+        resolve(filePath);
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
+};
+
+// CRON JOB: Se ejecuta todos los días a las 3:00 AM para ver si toca hacer respaldo
+cron.schedule('0 3 * * *', async () => {
+  try {
+    const config = await prisma.configuracionBackup.findUnique({ where: { id: 1 } });
+    if (!config || !config.activo) return;
+
+    const hoy = new Date();
+    let hacerBackup = false;
+
+    if (config.intervalo === 'DIARIO') hacerBackup = true;
+    else if (config.intervalo === 'SEMANAL' && hoy.getDay() === 0) hacerBackup = true; // Solo Domingos
+    else if (config.intervalo === 'MENSUAL' && hoy.getDate() === 1) hacerBackup = true; // Solo día 1 del mes
+
+    if (hacerBackup) {
+      console.log('Iniciando respaldo automático programado...');
+      await generarBackupDB('AUTOMATICO');
+    }
+  } catch (error) {
+    console.error("Error en tarea programada de backup:", error);
+  }
+});
+
+// RUTAS DE LA API (Frontend)
+
+// Obtener o inicializar la configuración
+app.get('/api/backups/config', verificarToken, async (req: AuthRequest, res: Response) => {
+  if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Denegado' }) as any;
+  let config = await prisma.configuracionBackup.findUnique({ where: { id: 1 } });
+  if (!config) config = await prisma.configuracionBackup.create({ data: { id: 1, correoDestino: '' } });
+  res.json(config);
+});
+
+// Guardar configuración
+app.put('/api/backups/config', verificarToken, async (req: AuthRequest, res: Response) => {
+  if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Denegado' }) as any;
+  const { intervalo, correoDestino, activo } = req.body;
+  const config = await prisma.configuracionBackup.upsert({
+    where: { id: 1 },
+    update: { intervalo, correoDestino, activo },
+    create: { id: 1, intervalo, correoDestino, activo }
+  });
+  res.json({ message: 'Configuración actualizada', config });
+});
+
+// Obtener historial de respaldos
+app.get('/api/backups/historial', verificarToken, async (req: AuthRequest, res: Response) => {
+  if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Denegado' }) as any;
+  const historial = await prisma.historialBackup.findMany({ orderBy: { fechaCreacion: 'desc' } });
+  res.json(historial);
+});
+
+// Generar backup manualmente
+app.post('/api/backups/generar', verificarToken, async (req: AuthRequest, res: Response) => {
+  if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Denegado' }) as any;
+  try {
+    await generarBackupDB('MANUAL');
+    res.json({ message: 'Respaldo manual generado y enviado por correo.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Fallo al generar el respaldo manual.' });
+  }
+});
+
+// Descargar un archivo .sql directamente
+app.get('/api/backups/descargar/:archivo', verificarToken, (req: AuthRequest, res: Response) => {
+  if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Denegado' }) as any;
+  const filePath = path.join(__dirname, 'backups', req.params.archivo);
+  if (fs.existsSync(filePath)) {
+    res.download(filePath);
+  } else {
+    res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
   }
 });
 

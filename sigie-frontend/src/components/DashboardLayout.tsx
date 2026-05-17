@@ -3,7 +3,8 @@ import { Outlet, Link, NavLink, useNavigate, useLocation } from 'react-router-do
 import axios from 'axios';
 import { 
   LayoutDashboard, AlertTriangle, Users, FileText, LogOut,
-  UserCircle, ShieldAlert, Activity, Menu, X, Megaphone, Bell
+  UserCircle, ShieldAlert, Activity, Menu, X, Megaphone, Bell,
+  Database
 } from 'lucide-react';
 
 import logoIcon from '../assets/logo-icon.png';
@@ -49,8 +50,8 @@ const DashboardLayout = () => {
     eventos.forEach(evento => window.addEventListener(evento, reiniciarTemporizador));
     reiniciarTemporizador();
 
-    // Cargar notificaciones al inicio
-    cargarNotificaciones();
+    // Cargar notificaciones al inicio (Deshabilitado)
+    //cargarNotificaciones();
 
     return () => {
       if (temporizadorInactividad.current) clearTimeout(temporizadorInactividad.current);
@@ -91,17 +92,20 @@ const DashboardLayout = () => {
   };
 
   const navItemsEscuela = [
-    { name: 'Panel Principal', path: '/dashboard', icon: LayoutDashboard },
+    { name: 'Generar Estadísticas', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Incidentes', path: '/dashboard/incidentes', icon: AlertTriangle },
     ...(rolUsuario === 'ADMIN' || rolUsuario === 'ENFERMERA' 
       ? [
-          { name: 'Enfermería', path: '/dashboard/enfermeria', icon: Activity },
+          //{ name: 'Enfermería', path: '/dashboard/enfermeria', icon: Activity },
           { name: 'Intervenciones', path: '/dashboard/intervenciones', icon: ShieldAlert }
         ] : []),
-    ...(rolUsuario === 'ADMIN' || rolUsuario === 'DIRECTOR' 
-      ? [{ name: 'Avisos Masivos', path: '/dashboard/avisos', icon: Megaphone }] : []),
-    { name: 'Alumnos', path: '/dashboard/alumnos', icon: Users },
-    { name: 'Reportes', path: '/dashboard/reportes', icon: FileText },
+    //...(rolUsuario === 'ADMIN' || rolUsuario === 'DIRECTOR' 
+    //  ? [{ name: 'Avisos Masivos', path: '/dashboard/avisos', icon: Megaphone }] : []),
+    { name: 'Directorio de Alumnos', path: '/dashboard/alumnos', icon: Users },
+    { name: 'Generar Reportes', path: '/dashboard/reportes', icon: FileText },
+
+    ...(rolUsuario === 'ADMIN' 
+      ? [{ name: 'Generar Copia de Seguridad', path: '/dashboard/backups', icon: Database }] : []),
   ];
 
   const navItemsTutor = [{ name: 'Portal Familiar', path: '/dashboard/mis-hijos', icon: Users }];
@@ -121,7 +125,7 @@ const DashboardLayout = () => {
           <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 right-4 text-blue-200 hover:text-white"><X className="h-6 w-6" /></button>
           <img src={logoIcon} alt="Logo SIGIE" className="h-14 w-14 mb-3 drop-shadow-md" />
           <h1 className="text-2xl font-bold tracking-wider text-white leading-none">SIGIE</h1>
-          <p className="text-blue-300 text-xs font-medium mt-1 uppercase tracking-widest">Gestión Escolar</p>
+          <p className="text-blue-300 text-xs font-medium mt-1 uppercase tracking-widest text-center">Sistema de Gestión de Incidentes Escolares</p>
         </div>
 
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
@@ -136,17 +140,26 @@ const DashboardLayout = () => {
             );
           })}
 
-          {['ADMIN', 'DIRECTOR', 'DOCENTE'].includes(rolUsuario) && (
-            <NavLink to="/dashboard/usuarios" className={({ isActive }) => `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors mt-2 border border-blue-800/50 ${isActive ? 'bg-blue-800 text-white border-blue-700' : 'text-blue-200 hover:bg-blue-800 hover:text-white'}`}>
+          {/* Solo el ADMIN puede ver el acceso a Gestión de Personal */}
+          {rolUsuario === 'ADMIN' && (
+            <NavLink
+              to="/dashboard/usuarios"
+              className={({ isActive }) =>
+                `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors mt-2 border border-blue-800/50 ${
+                  isActive ? 'bg-blue-800 text-white border-blue-700' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                }`
+              }
+            >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span className="font-medium text-sm">Gestión de Personal</span>
+              <span className="font-medium text-sm">Gestionar Usuarios</span>
             </NavLink>
           )}
         
-          {rolUsuario === 'ADMIN' && (
+          {/* Módulo de Auditoría (ADMIN y DIRECTOR) */}
+          {['ADMIN', 'DIRECTOR'].includes(rolUsuario) && (
             <NavLink to="/dashboard/auditoria" className={({ isActive }) => `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors mt-2 border border-red-800/50 ${isActive ? 'bg-red-800 text-white border-red-700' : 'text-blue-200 hover:bg-red-900 hover:text-white'}`}>
               <ShieldAlert className="h-5 w-5" />
-              <span className="font-medium text-sm">Bitácora Auditoría</span>
+              <span className="font-medium text-sm">Generar Auditoria</span>
             </NavLink>
           )}
         </nav>
@@ -162,15 +175,15 @@ const DashboardLayout = () => {
               </div>
             </div>
             
-            {/* Campanita Fija en el Sidebar */}
-            <button 
+            {/* Campanita Fija en el Sidebar (DESHABILITADA) */}
+            {/* <button 
               onClick={abrirNotificaciones} 
               className="p-2 text-blue-200 hover:text-white hover:bg-blue-800 rounded-lg transition-colors relative"
               title="Ver notificaciones"
             >
               <Bell className="h-5 w-5" />
               {hayNuevasNotificaciones && <span className="absolute top-1 right-2 h-2.5 w-2.5 bg-red-500 rounded-full border-2 border-blue-900"></span>}
-            </button>
+            </button> */}
           </div>
           <button onClick={handleLogout} className="flex items-center space-x-3 px-4 py-2 w-full text-left text-red-300 hover:bg-blue-800 hover:text-red-200 rounded-lg transition-colors">
             <LogOut className="h-5 w-5" />
@@ -193,7 +206,8 @@ const DashboardLayout = () => {
           </button>
         </div>
 
-        {/* CAMPANITA FLOTANTE INTELIGENTE */}
+        {/* CAMPANITA FLOTANTE INTELIGENTE (DESHABILITADA) */}
+        {/*
         {hayNuevasNotificaciones && (
           <button 
             onClick={abrirNotificaciones}
@@ -204,19 +218,19 @@ const DashboardLayout = () => {
             <span className="absolute top-0 right-0 h-3.5 w-3.5 bg-red-500 rounded-full border-2 border-white"></span>
           </button>
         )}
+        */}
 
-        {/* CONTENEDOR DE LAS VISTAS */}
+        {/* CONTENEDOR DE LAS VISTAS (Este es el que se había bloqueado) */}
         <div className="flex-1 p-4 md:p-8 overflow-y-auto">
           <Outlet />
         </div>
 
-        {/* PANEL LATERAL DE NOTIFICACIONES (Drawer) */}
+        {/* PANEL LATERAL DE NOTIFICACIONES (Drawer) (DESHABILITADO) */}
+        {/*
         {mostrarNotificaciones && (
           <>
-            {/* Fondo transparente (Z-20): Se coloca por DEBAJO del menú lateral */}
             <div className="fixed inset-0 bg-black/30 z-20 backdrop-blur-sm transition-opacity" onClick={() => setMostrarNotificaciones(false)} />
             
-            {/* Panel Deslizable (Z-30) */}
             <div className="fixed top-0 right-0 h-full w-full sm:w-96 bg-gray-50 shadow-2xl z-30 flex flex-col transform transition-transform">
               
               <div className="bg-blue-900 text-white p-5 flex justify-between items-center shrink-0 shadow-md">
@@ -224,7 +238,6 @@ const DashboardLayout = () => {
                 <button onClick={() => setMostrarNotificaciones(false)} className="p-1.5 hover:bg-blue-800 rounded-md transition-colors"><X className="h-6 w-6"/></button>
               </div>
               
-              {/* Contenedor centralizado para mensajes vacíos */}
               <div className={`flex-1 overflow-y-auto p-4 ${notificaciones.length === 0 ? 'flex flex-col items-center justify-center' : 'space-y-3'}`}>
                 {notificaciones.length === 0 ? (
                   <div className="text-center">
@@ -244,10 +257,10 @@ const DashboardLayout = () => {
                   ))
                 )}
               </div>
-
             </div>
           </>
         )}
+        */}
       </main>
     </div>
   );

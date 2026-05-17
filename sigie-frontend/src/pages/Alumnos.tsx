@@ -19,6 +19,9 @@ const Alumnos = () => {
   const [busqueda, setBusqueda] = useState('');
   const [filtroGrado, setFiltroGrado] = useState('');
 
+  // NUEVO: Estado para buscar tutores en el formulario
+  const [busquedaTutor, setBusquedaTutor] = useState('');
+
   // Estados del Formulario
   const [matricula, setMatricula] = useState('');
   const [nombre, setNombre] = useState('');
@@ -26,7 +29,7 @@ const Alumnos = () => {
   const [apellidoMaterno, setApellidoMaterno] = useState('');
   const [grado, setGrado] = useState('1');
   const [grupo, setGrupo] = useState('A');
-  const [tutorId, setTutorId] = useState('');
+  const [tutoresIds, setTutoresIds] = useState<string[]>([]);
   const [expedienteMedico, setExpedienteMedico] = useState('');
 
   // Verificacion de Roles
@@ -84,22 +87,29 @@ const Alumnos = () => {
     setApellidoMaterno(alumnoSeleccionado.apellidoMaterno || '');
     setGrado(alumnoSeleccionado.grado);
     setGrupo(alumnoSeleccionado.grupo || 'A');
-    setTutorId(alumnoSeleccionado.tutorId ? alumnoSeleccionado.tutorId.toString() : '');
+    setTutoresIds(alumnoSeleccionado.tutores ? alumnoSeleccionado.tutores.map((t: any) => t.id.toString()) : []);
     setExpedienteMedico(alumnoSeleccionado.expedienteMedico || '');
+    setBusquedaTutor(''); // Limpiamos la búsqueda
     setVista('editar');
     setError(''); setSuccess('');
   };
 
   const limpiarFormulario = () => {
     setMatricula(''); setNombre(''); setApellidoPaterno(''); setApellidoMaterno(''); setExpedienteMedico('');
-    setGrado('1'); setGrupo('A'); setTutorId('');
+    setGrado('1'); setGrupo('A'); setTutoresIds([]); setBusquedaTutor('');
+  };
+
+  const toggleTutor = (id: string) => {
+    setTutoresIds(prev => 
+      prev.includes(id) ? prev.filter(tId => tId !== id) : [...prev, id]
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(''); setSuccess(''); setIsLoading(true);
 
-    const payload = { matricula, nombre, apellidoPaterno, apellidoMaterno, grado, grupo, expedienteMedico, tutorId };
+    const payload = { matricula, nombre, apellidoPaterno, apellidoMaterno, grado, grupo, expedienteMedico, tutoresIds };
 
     try {
       if (vista === 'crear') {
@@ -107,7 +117,7 @@ const Alumnos = () => {
         setSuccess('Alumno registrado correctamente.');
       } else if (vista === 'editar') {
         await axios.put(`https://api-sigie.delachemilio.xyz/api/alumnos/${alumnoSeleccionado.id}`, payload, getConfig());
-        setSuccess('Informacion actualizada correctamente.');
+        setSuccess('Información actualizada correctamente.');
       }
 
       limpiarFormulario();
@@ -128,13 +138,8 @@ const Alumnos = () => {
       const dataUrl = await toPng(elemento, {
         quality: 1,
         pixelRatio: 2,
-        // FORZAMOS EL TAMAÑO DE ESCRITORIO PARA EL PDF
         width: 1024,
-        style: {
-          width: '1024px',
-          margin: '0',
-          padding: '20px'
-        },
+        style: { width: '1024px', margin: '0', padding: '20px' },
         filter: (node) => {
           if (node.tagName !== 'SCRIPT' && node.getAttribute && node.getAttribute('data-html2canvas-ignore') === 'true') {
             return false;
@@ -162,16 +167,19 @@ const Alumnos = () => {
     }
   };
 
-  // Logica de Filtrado y Busqueda
+  // Lógica de Filtrado General
   const alumnosFiltrados = alumnos.filter(a => {
     const terminoBusqueda = busqueda.toLowerCase();
     const nombreCompleto = `${a.nombre} ${a.apellidoPaterno} ${a.apellidoMaterno || ''}`.toLowerCase();
-
     const coincideBusqueda = nombreCompleto.includes(terminoBusqueda) || a.matricula.toLowerCase().includes(terminoBusqueda);
     const coincideGrado = filtroGrado === '' || a.grado.toString() === filtroGrado;
-
     return coincideBusqueda && coincideGrado;
   });
+
+  // NUEVO: Lógica de Filtrado Exclusiva para la lista de tutores del formulario
+  const tutoresFiltrados = tutores.filter(t => 
+    `${t.nombre} ${t.apellidoPaterno} ${t.email}`.toLowerCase().includes(busquedaTutor.toLowerCase())
+  );
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -182,12 +190,12 @@ const Alumnos = () => {
         </h2>
         <div className="flex w-full md:w-auto bg-gray-100 rounded-lg p-1">
           <button onClick={() => setVista('lista')} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'lista' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
-            <List className="h-4 w-4" /> Directorio
+            <List className="h-4 w-4" /> Directorio de Alumnos
           </button>
 
           {tienePermisos && (
             <button onClick={() => { limpiarFormulario(); setVista('crear'); setSuccess(''); setError(''); }} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'crear' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}>
-              <UserPlus className="h-4 w-4" /> Nuevo Alumno
+              <UserPlus className="h-4 w-4" /> Registrar Nuevo Alumno
             </button>
           )}
         </div>
@@ -196,9 +204,9 @@ const Alumnos = () => {
       {success && <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-700 flex items-center gap-3"><CheckCircle className="h-5 w-5" /> {success}</div>}
       {error && <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 flex items-center gap-3"><XCircle className="h-5 w-5" /> {error}</div>}
 
+      {/* --- VISTA LISTA --- */}
       {vista === 'lista' && (
         <div className="space-y-4">
-          {/* BARRA DE BUSQUEDA Y FILTROS */}
           <div className="flex flex-col md:flex-row gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
@@ -207,7 +215,7 @@ const Alumnos = () => {
                 placeholder="Buscar por matricula o nombre..."
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
-                className="pl-10 w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500"
+                className="pl-10 w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
             <div className="flex items-center gap-2 w-full md:w-auto">
@@ -215,7 +223,7 @@ const Alumnos = () => {
               <select
                 value={filtroGrado}
                 onChange={(e) => setFiltroGrado(e.target.value)}
-                className="w-full md:w-48 border border-gray-300 rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500"
+                className="w-full md:w-48 border border-gray-300 rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
               >
                 <option value="">Todos los Grados</option>
                 <option value="1">1er Grado</option>
@@ -235,7 +243,7 @@ const Alumnos = () => {
                   <th className="p-4">Matricula</th>
                   <th className="p-4">Nombre Completo</th>
                   <th className="p-4">Grado y Grupo</th>
-                  <th className="p-4">Tutor de Contacto</th>
+                  <th className="p-4">Contactos Vinculados</th>
                   <th className="p-4 text-center">Acciones</th>
                 </tr>
               </thead>
@@ -251,10 +259,14 @@ const Alumnos = () => {
                         {a.grado}° "{a.grupo || '-'}"
                       </td>
                       <td className="p-4 text-sm text-gray-600">
-                        {a.tutor ? (
-                          <div className="flex items-center gap-2">
-                            <UserCircle className="h-4 w-4 text-gray-400" />
-                            <span>{a.tutor.nombre} {a.tutor.apellidoPaterno}</span>
+                        {a.tutores && a.tutores.length > 0 ? (
+                          <div className="flex flex-col gap-1">
+                            {a.tutores.map((t: any) => (
+                              <div key={t.id} className="flex items-center gap-2">
+                                <UserCircle className="h-4 w-4 text-gray-400" />
+                                <span>{t.nombre} {t.apellidoPaterno}</span>
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <span className="text-red-400 italic text-xs border border-red-200 px-2 py-0.5 rounded bg-red-50">Sin Tutor Asignado</span>
@@ -274,59 +286,88 @@ const Alumnos = () => {
         </div>
       )}
 
+      {/* --- VISTA CREAR Y EDITAR ALUMNO --- */}
       {(vista === 'crear' || vista === 'editar') && (
         <form onSubmit={handleSubmit} className="max-w-4xl space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-3 bg-blue-50/50 p-4 rounded-lg border border-blue-100 grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-blue-900 mb-1">Matricula Escolar *</label>
-                <input required type="text" value={matricula} onChange={(e) => setMatricula(e.target.value)} placeholder="Ej. ALM-2026-001" className="w-full border border-blue-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" />
+                <input required type="text" value={matricula} onChange={(e) => setMatricula(e.target.value)} placeholder="Ej. ALM-2026-001" className="w-full border border-blue-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-blue-900 mb-1">Grado (Numero) *</label>
-                <select required value={grado} onChange={(e) => setGrado(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-blue-500">
+                <select required value={grado} onChange={(e) => setGrado(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
                   <option value="1">1</option><option value="2">2</option><option value="3">3</option>
                   <option value="4">4</option><option value="5">5</option><option value="6">6</option>
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-blue-900 mb-1">Grupo (Letra) *</label>
-                <select required value={grupo} onChange={(e) => setGrupo(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-blue-500">
+                <select required value={grupo} onChange={(e) => setGrupo(e.target.value)} className="w-full border border-blue-200 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-blue-500 outline-none">
                   <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
                 </select>
               </div>
             </div>
 
-            {/* Contenedor agrupado para Apellidos y Nombre */}
             <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Apellido Paterno *</label>
-                <input required type="text" value={apellidoPaterno} onChange={(e) => setApellidoPaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" />
+                <input required type="text" value={apellidoPaterno} onChange={(e) => setApellidoPaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Apellido Materno</label>
-                <input type="text" value={apellidoMaterno} onChange={(e) => setApellidoMaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" />
+                <input type="text" value={apellidoMaterno} onChange={(e) => setApellidoMaterno(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre (s) *</label>
-                <input required type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500" />
+                <input required type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
             </div>
 
+            {/* SECCIÓN ACTUALIZADA: Búsqueda y selección de tutores */}
             <div className="md:col-span-3 border-t pt-4">
-              <label className="block text-sm font-bold text-gray-800 mb-1 flex items-center gap-2"><UserCircle className="h-5 w-5 text-gray-500"/> Vincular Padre / Madre / Tutor de Contacto</label>
-              <p className="text-xs text-gray-500 mb-2">Seleccione al tutor registrado en el sistema que recibira las notificaciones de este alumno.</p>
-              <select value={tutorId} onChange={(e) => setTutorId(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-blue-500">
-                <option value="">-- Sin Tutor Asignado Aun --</option>
-                {tutores.map(t => (
-                  <option key={t.id} value={t.id}>{t.nombre} {t.apellidoPaterno} ({t.email})</option>
-                ))}
-              </select>
+              <label className="block text-sm font-bold text-gray-800 mb-1 flex items-center gap-2"><UserCircle className="h-5 w-5 text-gray-500"/> Vincular Padres / Tutores de Contacto</label>
+              <p className="text-xs text-gray-500 mb-3">Busque y seleccione a los tutores registrados en el sistema. Puede vincular más de uno.</p>
+              
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar tutor por nombre o correo electrónico"
+                  value={busquedaTutor}
+                  onChange={(e) => setBusquedaTutor(e.target.value)}
+                  className="pl-9 w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50"
+                />
+              </div>
+
+              <div className="border border-gray-300 rounded-lg max-h-48 overflow-y-auto bg-gray-50 p-2 space-y-1">
+                {tutoresFiltrados.length === 0 ? (
+                  <p className="text-sm text-gray-500 p-2 text-center">
+                    {busquedaTutor ? 'No se encontraron tutores con esa búsqueda.' : 'No hay tutores registrados en el sistema.'}
+                  </p>
+                ) : (
+                  tutoresFiltrados.map(t => (
+                    <label key={t.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${tutoresIds.includes(t.id.toString()) ? 'bg-blue-50 border-blue-300 shadow-sm' : 'bg-white border-gray-200 hover:bg-gray-100'}`}>
+                      <input 
+                        type="checkbox" 
+                        checked={tutoresIds.includes(t.id.toString())} 
+                        onChange={() => toggleTutor(t.id.toString())} 
+                        className="h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <div>
+                        <p className="font-medium text-gray-800 text-sm">{t.nombre} {t.apellidoPaterno}</p>
+                        <p className="text-xs text-gray-500">{t.email}</p>
+                      </div>
+                    </label>
+                  ))
+                )}
+              </div>
             </div>
 
             <div className="md:col-span-3">
               <label className="block text-sm font-medium text-gray-700 mb-1">Expediente Medico / Alergias / Condiciones</label>
-              <textarea rows={3} value={expedienteMedico} onChange={(e) => setExpedienteMedico(e.target.value)} placeholder="Ej. Alergico a la penicilina. Asma leve." className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500"></textarea>
+              <textarea rows={3} value={expedienteMedico} onChange={(e) => setExpedienteMedico(e.target.value)} placeholder="Ej. Alergico a la penicilina. Asma leve." className="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
             </div>
           </div>
 
@@ -349,6 +390,7 @@ const Alumnos = () => {
         </form>
       )}
 
+      {/* --- VISTA DETALLE DEL EXPEDIENTE --- */}
       {vista === 'detalle' && alumnoSeleccionado && (
         <div className="space-y-6" id="expediente-imprimible">
           <div className="bg-blue-50 p-4 md:p-6 rounded-lg border border-blue-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm" data-html2canvas-ignore="false">
@@ -386,18 +428,21 @@ const Alumnos = () => {
 
             <div className="border border-gray-200 rounded-xl p-5 shadow-sm bg-white">
               <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-3 border-b pb-2">
-                <UserCircle className="h-5 w-5 text-indigo-500" /> Contacto Principal / Tutor
+                <UserCircle className="h-5 w-5 text-indigo-500" /> Contactos / Tutores ({alumnoSeleccionado.tutores?.length || 0})
               </h4>
-              {alumnoSeleccionado.tutor ? (
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                  <p className="font-bold text-gray-900 text-lg mb-1">{alumnoSeleccionado.tutor.nombre} {alumnoSeleccionado.tutor.apellidoPaterno}</p>
-                  <p className="text-sm text-gray-600 flex items-center gap-2"><span className="font-medium">✉ Correo:</span> {alumnoSeleccionado.tutor.email}</p>
-                  <p className="text-xs text-indigo-600 font-semibold mt-2 bg-indigo-50 inline-block px-2 py-1 rounded">Usuario Verificado en SIGIE</p>
+              {alumnoSeleccionado.tutores && alumnoSeleccionado.tutores.length > 0 ? (
+                <div className="space-y-3">
+                  {alumnoSeleccionado.tutores.map((tutor: any) => (
+                    <div key={tutor.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                      <p className="font-bold text-gray-900 text-sm mb-1">{tutor.nombre} {tutor.apellidoPaterno}</p>
+                      <p className="text-xs text-gray-600 flex items-center gap-2"><span className="font-medium">✉</span> {tutor.email}</p>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="bg-red-50 p-4 rounded-lg border border-red-100 text-center">
                   <AlertTriangle className="h-6 w-6 text-red-500 mx-auto mb-2" />
-                  <p className="text-sm font-bold text-red-700">Sin Tutor Asignado</p>
+                  <p className="text-sm font-bold text-red-700">Sin Tutores Asignados</p>
                 </div>
               )}
             </div>

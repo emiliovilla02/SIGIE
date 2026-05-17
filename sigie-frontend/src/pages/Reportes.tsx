@@ -28,7 +28,7 @@ const Reportes = () => {
     <div className="space-y-6">
       <h2 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
         <FileBarChart className="h-8 w-8 text-blue-600" />
-        Reportes y Estadísticas
+        Visualizar Reportes
       </h2>
 
       {/* Cards de Resumen */}

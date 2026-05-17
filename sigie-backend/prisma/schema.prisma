@@ -26,7 +26,7 @@ model Usuario {
   incidentesReportados Incidente[]
   reportesGenerados    Reporte[]
   seguimientosHechos   Seguimiento[] 
-  hijos                Alumno[]      @relation("TutorHijos")
+  hijos                Alumno[]      @relation("AlumnoTutores")
   auditorias	       Auditoria[]
   intervencionesRegistradas IntervencionExterna[]
   avisosCreados             Aviso[]
@@ -43,8 +43,7 @@ model Alumno {
   grupo            String?
   expedienteMedico String?          @db.Text
   
-  tutorId          Int?
-  tutor            Usuario?         @relation("TutorHijos", fields: [tutorId], references: [id])
+  tutores          Usuario[]        @relation("AlumnoTutores")
   
   incidentes       Incidente[] 
   atenciones       AtencionMedica[]
@@ -112,7 +111,8 @@ model Auditoria {
   entidad   String   // Ej. "INCIDENTE"
   entidadId Int?     // El ID original del registro afectado
   detalles  String   @db.Text // Qué decía el reporte antes de ser borrado
-  
+  ipAddress String?
+
   usuarioId Int
   usuario   Usuario  @relation(fields: [usuarioId], references: [id])
 }
@@ -147,4 +147,24 @@ model Aviso {
 
   creadoPorId   Int
   creadoPor     Usuario   @relation(fields: [creadoPorId], references: [id])
+}
+
+// ==========================================
+// MÓDULO DE RESPALDOS (BACKUPS)
+// ==========================================
+model ConfiguracionBackup {
+  id               Int       @id @default(1)
+  intervalo        String    @default("DIARIO") // DIARIO, SEMANAL, MENSUAL
+  correoDestino    String    // A qué correo se mandará el .sql
+  ultimoRespaldo   DateTime?
+  activo           Boolean   @default(true)
+}
+
+model HistorialBackup {
+  id               Int       @id @default(autoincrement())
+  fechaCreacion    DateTime  @default(now())
+  nombreArchivo    String
+  tamanoBytes      Int?
+  estado           String    @default("EXITOSO") // EXITOSO o FALLIDO
+  tipo             String    @default("AUTOMATICO") // AUTOMATICO o MANUAL
 }

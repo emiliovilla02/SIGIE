@@ -12,6 +12,7 @@ import Enfermeria from './pages/Enfermeria';
 import Dashboard from './pages/Dashboard';
 import Intervenciones from './pages/Intervenciones';
 import Avisos from './pages/Avisos';
+import Backups from './pages/Backups';
 
 function App() {
   return (
@@ -33,11 +34,13 @@ function App() {
           <Route path="alumnos" element={<Alumnos />} />
           <Route path="reportes" element={<Reportes />} />
           <Route path="usuarios" element={<Usuarios />} />
+          <Route path="backups" element={<Backups />} />
           <Route path="mis-hijos" element={<PortalTutor />} />
           <Route path="auditoria" element={<Auditoria />} />
-          <Route path="enfermeria" element={<Enfermeria />} />
+          {/* Módulo deshabilitado temporalmente */}
+          {/* <Route path="enfermeria" element={<Enfermeria />} /> */}
           <Route path="intervenciones" element={<Intervenciones />} />
-          <Route path="avisos" element={<Avisos />} />
+          {/* <Route path="avisos" element={<Avisos />} /> */}
         </Route>
       </Routes>
     </BrowserRouter>

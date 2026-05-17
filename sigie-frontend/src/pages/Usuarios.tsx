@@ -139,14 +139,14 @@ const Usuarios = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <Shield className="h-6 w-6 text-blue-900" />
-          Gestion de Usuarios
+          Gestionar Usuarios
         </h2>
         <div className="flex w-full md:w-auto bg-gray-100 rounded-lg p-1">
           <button onClick={() => { limpiarFormulario(); setVista('lista'); }} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'lista' ? 'bg-white shadow text-blue-900' : 'text-gray-600 hover:text-gray-900'}`}>
             <List className="h-4 w-4" /> Personal
           </button>
           <button onClick={() => { limpiarFormulario(); setVista('crear'); setSuccess(''); setError(''); }} className={`flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${vista === 'crear' ? 'bg-white shadow text-blue-900' : 'text-gray-600 hover:text-gray-900'}`}>
-            <UserPlus className="h-4 w-4" /> Alta de Usuario
+            <UserPlus className="h-4 w-4" /> Registrar Usuarios
           </button>
         </div>
       </div>
